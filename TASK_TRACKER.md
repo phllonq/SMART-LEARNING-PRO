@@ -2,77 +2,79 @@
 
 ## Phase 0: Initialization & Environment
 - [x] Check environment & workspace (`E:\SMART-LEARNING-PRO`)
-- [x] Verify Git repository
-- [x] Check runtimes: Python 3.11, Node.js v22, npm, pnpm
-- [x] Check services: Docker, PostgreSQL, Redis
+- [x] Verify Git repository (Branch `master`, Initial commit `3cac958`)
+- [x] Check runtimes: Python 3.11.0, Node.js v22.14.0, npm, pnpm
 - [x] Setup `.gitignore` and `.env.example`
-- [x] Setup `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, `CHANGELOG.md`
+- [x] Setup virtual environment `.venv` with `greenlet` and all dependencies
+- [x] Setup tracking documents
 
 ## Phase 1: Product & Architecture Design
-- [ ] Write Product Requirements Document (PRD) & Sitemap
-- [ ] Design Modular Monolith Architecture
-- [ ] Design Complete Database Schema (PostgreSQL + pgvector / SQLite compatible)
-- [ ] Define REST API endpoints & data contracts
-- [ ] Document System Security & Threat Model
+- [x] Write Product Requirements Document (PRD) (`docs/PRODUCT_SPECIFICATION.md`)
+- [x] Design Sitemap & User Flows (`docs/SITEMAP_AND_USER_FLOWS.md`)
+- [x] Design Modular Monolith Architecture (`docs/SYSTEM_ARCHITECTURE.md`)
+- [x] Design Complete Database Schema with 26 tables (`docs/DATABASE_SCHEMA.md`)
+- [x] Define REST API endpoints & contracts (`docs/API_SPECIFICATION.md`)
 
 ## Phase 2: Design System & Frontend Foundation
 - [ ] Setup Next.js with TypeScript, Tailwind CSS, Lucide icons, KaTeX
-- [ ] Implement Design System tokens (Primary #635BFF, Navy #0F172A, Bg #F8FAFC, etc.)
-- [ ] Create UI component library (Button, Card, Input, Modal, Dropdown, Table, Badge, Tabs, Alert)
+- [ ] Implement Design System tokens (Primary #635BFF, Navy #0F172A, Bg #F8FAFC)
+- [ ] Create UI component library (Button, Card, Input, Modal, Dropdown, Table, Badge)
 - [ ] Setup Layouts (Public Landing, Student Portal, Teacher Portal, Admin Portal)
-- [ ] Configure Dark/Light mode theme provider
 
 ## Phase 3: Core Foundation (Backend & Auth)
-- [ ] Setup FastAPI Modular Monolith backend structure
-- [ ] Implement SQLAlchemy 2.0 async models & session management
-- [ ] Implement Argon2 password hashing & JWT token service (HttpOnly Cookie + Header)
-- [ ] Implement RBAC (Roles: STUDENT, TEACHER, ADMIN, SUPERADMIN)
-- [ ] Build Auth APIs (Register, Login, Me, Refresh, Logout)
-- [ ] Connect Frontend Auth state & protected routes
+- [x] Setup FastAPI Modular Monolith backend structure
+- [x] Implement SQLAlchemy 2.0 async models (26 tables across 8 modules)
+- [x] Implement Argon2id password hashing & verification
+- [x] Implement JWT token creation & decoding (Access + Refresh)
+- [x] Implement Auth dependencies (Header & HttpOnly cookie support)
+- [x] Implement Granular RBAC (Roles: STUDENT, TEACHER, ADMIN, SUPERADMIN)
+- [x] Build Auth APIs (`/register`, `/login`, `/me`, `/logout`)
+- [x] Build Health check API (`/api/v1/health`)
+- [x] Build Seeding Script (`scripts/seed_database.py`) with test accounts & Vietnamese curriculum
+- [x] Write & pass automated tests (Pytest: `test_auth.py`, `test_health.py`, `test_rbac.py`)
 
 ## Phase 4: Learning Modules
-- [ ] Subject, Grade, Chapter, Topic & Lesson management
-- [ ] Learning Material storage & viewer (Markdown, PDF, Video embeds, KaTeX formulas)
-- [ ] Question Bank & Question Editor (Single Choice, Multi-choice, True/False, Short Answer, Numeric, Essay)
-- [ ] Practice Engine & Exam Workspace (Timer, Question Palette, Flagging, Autosave)
-- [ ] Automatic Grading Engine & Exam History
+- [x] Curriculum models & sample data seeded (Grades 10-12, Math/Physics/Chem, Chapters, Topics, Lessons, KaTeX)
+- [ ] Curriculum API Router (`/api/v1/curriculum/*`)
+- [x] Question Bank models & sample KaTeX questions seeded
+- [ ] Question Bank API Router (`/api/v1/questions/*`)
+- [x] Examination models & 45-minute sample exam seeded
+- [ ] Exam Taking & Autosave API Router (`/api/v1/exams/*`)
+- [ ] Automatic Grading Engine & Result computation
 
 ## Phase 5: Teacher & Admin Portals
-- [ ] Teacher Dashboard & Classroom management
-- [ ] Exam Builder & Assignment distribution
-- [ ] Student Performance Analytics & Gradebook
-- [ ] Admin User Management, Subject/Grade Management
-- [ ] AI Configuration & System Audit Logs
+- [x] Classroom & Assignment models seeded
+- [ ] Classroom & Assignment API Routers (`/api/v1/classrooms/*`)
+- [ ] Admin User Management & Curriculum Admin Routers
+- [ ] Teacher Gradebook & Analytics Routers
 
 ## Phase 6: AI Engine & Gemini Integration
-- [ ] Backend Gemini API client integration with fallback handling
-- [ ] AI Tutor chat with stream / structured output
-- [ ] Wrong Answer Analysis Engine ("Why you failed & how to master it")
-- [ ] Step-by-step problem solver & similar question generator
-- [ ] RAG pipeline for curriculum documents & context management
-- [ ] AI usage logging, token counting & cost control
+- [x] AI models (Conversations, Messages, Usage Logs, Knowledge Chunks) created
+- [ ] Google Gemini API Service Client (`gemini-1.5-flash` & `gemini-1.5-pro`)
+- [ ] Wrong Answer Diagnostics Engine (Socratic reasoning, structured JSON output)
+- [ ] AI Tutor Chat router & RAG context retriever
+- [ ] AI Usage Monitoring & Cost tracking
 
 ## Phase 7: Intelligent Learning Features
+- [x] Topic Mastery & Knowledge Gap models created
 - [ ] Knowledge Gap Detection algorithm
-- [ ] Topic Mastery Tracking
-- [ ] Adaptive Learning Path & personalized recommendations
-- [ ] Daily learning goals & streak tracker
+- [ ] Topic Mastery real-time update on exam submission
+- [ ] Adaptive Practice recommendation engine
 
 ## Phase 8: Gamification, Notifications & Polish
-- [ ] XP points, Levels & Achievement badges
-- [ ] In-app notification system
-- [ ] Student Profile & Settings
-- [ ] Responsive UI fine-tuning for Mobile/Tablet/Desktop
+- [x] Gamification & Notification models created
+- [ ] Streak calculation & XP award service
+- [ ] Notification creation & mark-as-read APIs
 
 ## Phase 9: Testing & Security Audits
-- [ ] Backend Unit & Integration tests (pytest)
-- [ ] Authentication & RBAC security tests
-- [ ] Frontend test suites & build verification
-- [ ] Performance optimization
+- [x] Automated test suite setup with pytest & pytest-asyncio
+- [x] Auth flow unit & integration tests passing (100%)
+- [x] Health check test passing (100%)
+- [x] RBAC permission tests passing (100%)
+- [ ] Learning modules & grading integration tests
+- [ ] AI engine fallback tests
 
 ## Phase 10: Docker & Release Readiness
 - [ ] Dockerfiles for Backend & Frontend
-- [ ] Docker Compose (Postgres + pgvector, Redis, MinIO, Backend, Frontend)
-- [ ] Database migration & seeding scripts with comprehensive sample curriculum
-- [ ] Admin bootstrap command
-- [ ] Final documentation & user guides
+- [ ] docker-compose.yml with PostgreSQL + pgvector, Redis, Backend, Frontend
+- [ ] Windows PowerShell launch script

@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     USE_IN_MEMORY_CACHE_FALLBACK: bool = True
 
     # AI - GEMINI
-    GEMINI_API_KEY: str = Field(default="", env="GEMINI_API_KEY")
+    GEMINI_API_KEY: str = Field(default="", validation_alias="GEMINI_API_KEY")
     GEMINI_MODEL: str = "gemini-1.5-flash"
     GEMINI_PRO_MODEL: str = "gemini-1.5-pro"
     GEMINI_EMBEDDING_MODEL: str = "text-embedding-004"
