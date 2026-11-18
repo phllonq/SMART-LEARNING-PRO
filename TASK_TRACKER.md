@@ -38,7 +38,8 @@
 - [x] Curriculum API Router (`/api/v1/curriculum/*` - Grades, Subjects, Chapters, Topics, Lessons, KaTeX, RBAC, Pagination)
 - [x] Curriculum Automated Tests (8 test suites, 100% pass)
 - [x] Question Bank models & sample KaTeX questions seeded
-- [ ] Question Bank API Router (`/api/v1/questions/*`)
+- [x] Question Bank API Router (`/api/v1/questions/*` - CRUD, search, filters, publish toggle, teacher ownership, answer confidentiality)
+- [x] Question Bank Automated Tests (6 test suites, 100% pass)
 - [x] Examination models & 45-minute sample exam seeded
 - [ ] Exam Taking & Autosave API Router (`/api/v1/exams/*`)
 - [ ] Automatic Grading Engine & Result computation

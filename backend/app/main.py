@@ -11,6 +11,7 @@ from app.core.exceptions import EntityNotFoundException, PermissionDeniedExcepti
 from app.modules.auth.models import User, UserRole
 from app.modules.auth.router import router as auth_router
 from app.modules.curriculum.router import router as curriculum_router
+from app.modules.questions.router import router as questions_router
 from sqlalchemy import select
 
 # Configure logging
@@ -73,6 +74,7 @@ app.add_middleware(
 # Register Module Routers
 app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 app.include_router(curriculum_router, prefix=settings.API_V1_PREFIX)
+app.include_router(questions_router, prefix=settings.API_V1_PREFIX)
 
 
 # Health Check Endpoint

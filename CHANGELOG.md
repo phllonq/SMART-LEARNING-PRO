@@ -1,42 +1,40 @@
 # CHANGELOG — SMART LEARNING PRO
 
+## [0.4.0] - 2026-11-18
+### Added
+- **Question Bank Module (`/api/v1/questions/*`)**:
+  - `GET /questions`: Danh sách câu hỏi có phân trang và bộ lọc chuyên sâu theo khối lớp, môn học, chương, chủ đề, bài học, độ khó, dạng câu hỏi, tác giả, và tìm kiếm từ khóa trong nội dung / thẻ tags.
+  - `GET /questions/{question_id}`: Xem chi tiết câu hỏi và các phương án lựa chọn.
+  - `POST /questions`: Tạo câu hỏi mới (chỉ dành cho Giáo viên và Quản trị viên) với xác thực nghiệp vụ chặt chẽ theo dạng câu hỏi (Single Choice, Multiple Choice, True/False, Short Answer).
+  - `PATCH /questions/{question_id}`: Cập nhật nội dung câu hỏi, độ khó, thẻ tags hoặc thay thế danh sách phương án.
+  - `DELETE /questions/{question_id}`: Xóa câu hỏi khỏi ngân hàng câu hỏi.
+  - `POST /questions/{question_id}/toggle-publish`: Chuyển đổi trạng thái câu hỏi giữa Bản nháp và Công khai.
+- **Bảo mật & Chống gian lận (Answer Confidentiality)**:
+  - Tách bạch schema phản hồi: Học sinh và khách vãng lai nhận `QuestionStudentResponse` hoàn toàn **không chứa trường `is_correct`** của các phương án.
+  - Giáo viên và Quản trị viên nhận `QuestionAdminResponse` đầy đủ đáp án phục vụ quản lý và ra đề.
+- **Ranh giới sở hữu câu hỏi (Teacher Ownership Boundary)**:
+  - Giáo viên chỉ có quyền sửa hoặc xóa câu hỏi do chính mình tạo ra (`creator_id`).
+  - Hệ thống chặn `403 Forbidden` nếu giáo viên cố gắng can thiệp vào câu hỏi của giáo viên khác.
+  - Quản trị viên (`ADMIN`, `SUPERADMIN`) được cấp quyền ghi đè (Admin Override) để kiểm duyệt chất lượng nội dung toàn trường.
+- **Bộ kiểm thử tự động chuyên sâu**:
+  - Tạo `backend/tests/test_questions.py` với 6 test suites bao quát toàn bộ yêu cầu bảo mật, quyền sở hữu, lọc đa cấp và xác thực dữ liệu.
+  - Toàn bộ backend test suite đạt **17/17 tests PASS (100%)** trong 2.01 giây.
+
 ## [0.3.0] - 2026-11-18
 ### Added
-- **Curriculum Module API (`/api/v1/curriculum/*`)**:
-  - `GET /grades`: Lấy danh sách khối lớp (Lớp 6 đến 12).
-  - `GET /grades/{grade_id}/subjects`: Lấy danh sách môn học theo khối lớp có hỗ trợ phân trang.
-  - `GET /subjects`: Danh sách môn học toàn hệ thống với bộ lọc khối lớp.
-  - `GET /subjects/{subject_id}`: Chi tiết thông tin môn học.
-  - `POST /subjects`: Tạo môn học mới (Admin only).
-  - `GET /subjects/{subject_id}/chapters`: Lấy toàn bộ cây đề cương (Chương -> Chủ đề -> Tóm tắt Bài học) với quan hệ nạp sẵn `selectinload`.
-  - `POST /chapters`: Tạo chương mới thuộc môn học (Giáo viên / Admin).
-  - `POST /topics`: Tạo chủ đề mới thuộc chương (Giáo viên / Admin).
-  - `GET /topics/{topic_id}/lessons` & `GET /chapters/{chapter_id}/lessons`: Danh sách bài học có phân trang.
-  - `GET /lessons/{lesson_id}`: Chi tiết nội dung bài giảng phong phú hỗ trợ công thức toán học KaTeX (`$\sin x = m$`) và tài liệu đính kèm.
-  - `POST /lessons` & `PATCH /lessons/{lesson_id}`: Tạo và cập nhật nội dung bài giảng (Giáo viên / Admin).
-  - `DELETE /lessons/{lesson_id}`: Xóa bài giảng (Admin only).
-- **Kiểm soát xuất bản (Publication Filtering)**:
-  - Học sinh và khách chỉ xem được các môn học và bài giảng đã công khai (`is_published: true`).
-  - Bản nháp chưa xuất bản được ẩn an toàn (trả về 404 cho học sinh, chỉ giáo viên và quản trị viên được phép truy cập).
-- **Bộ kiểm thử tự động toàn diện**:
-  - Thêm 8 test suite cho Curriculum trong `backend/tests/test_curriculum.py`.
-  - Toàn bộ backend test suite đạt **11/11 tests PASS (100%)** trong 1.06 giây.
+- Curriculum Module API (`/api/v1/curriculum/*`) với 11 endpoints hoàn chỉnh.
+- Kiểm soát xuất bản: Bản nháp được ẩn an toàn với học sinh.
+- Hỗ trợ công thức toán học KaTeX trong bài giảng.
+- Bộ kiểm thử tự động Curriculum: 8 test suites.
 
 ## [0.2.0] - 2026-11-18
 ### Added
-- Hoàn thành tài liệu kiến trúc hệ thống và đặc tả kỹ thuật Phase 1 trong `docs/`.
-- Xác lập Git baseline commit `3cac958`.
-- Khởi tạo môi trường ảo Python 3.11 (`.venv`) và cài đặt toàn bộ dependencies.
-- Xây dựng 26 models SQLAlchemy 2.0 ORM và khởi tạo database SQLite async `database/smart_learning.db`.
+- Hoàn thành kiến trúc hệ thống và đặc tả kỹ thuật Phase 1.
+- Xây dựng 26 models SQLAlchemy 2.0 ORM và khởi tạo SQLite async database.
 - Xây dựng module bảo mật Argon2id và JWT token kép (Header Bearer + HttpOnly Secure Cookie).
-- Xây dựng bộ lọc phân quyền RBAC (`STUDENT`, `TEACHER`, `ADMIN`, `SUPERADMIN`).
-- Xây dựng các API xác thực `/api/v1/auth/register`, `/login`, `/me`, `/logout`.
-- Xây dựng endpoint kiểm tra sức khỏe hệ thống `/api/v1/health`.
-- Xây dựng và thực thi seeder dữ liệu `scripts/seed_database.py`.
-- Thiết lập bộ kiểm thử tự động với pytest & pytest-asyncio (Commit `a329d5c`).
+- Xây dựng bộ lọc phân quyền RBAC và API xác thực (`/register`, `/login`, `/me`, `/logout`).
+- Xây dựng seeder dữ liệu GDPT 2018 và test suites ban đầu.
 
 ## [0.1.0] - 2026-11-18
 ### Added
-- Khởi tạo cấu trúc thư mục độc lập tại `E:\SMART-LEARNING-PRO`.
-- Khởi tạo Git repository.
-- Kiểm tra môi trường hệ thống.
+- Khởi tạo project độc lập tại `E:\SMART-LEARNING-PRO` và thiết lập Git.

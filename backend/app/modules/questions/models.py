@@ -28,15 +28,26 @@ class Question(Base, TimestampMixin):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     topic_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("topics.id", ondelete="SET NULL"), nullable=True)
+    lesson_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("lessons.id", ondelete="SET NULL"), nullable=True)
     creator_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     question_type: Mapped[str] = mapped_column(String(30), default=QuestionType.SINGLE_CHOICE.value, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)  # KaTeX math supported
     difficulty_level: Mapped[str] = mapped_column(String(20), default=DifficultyLevel.COMPREHENSION.value, nullable=False)
     explanation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Official step-by-step solution
     hint: Mapped[Optional[str]] = mapped_column(Text, nullable=True)         # Socratic hint
+    tags: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # e.g., "toán 11, lượng giác"
     is_public: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    options: Mapped[List["QuestionOption"]] = relationship("QuestionOption", back_populates="question", cascade="all, delete-orphan", order_by="QuestionOption.order_index")
+    options: Mapped[List["QuestionOption"]] = relationship(
+        "QuestionOption",
+        back_populates="question",
+        cascade="all, delete-orphan",
+        order_by="QuestionOption.order_index"
+    )
+
+    topic = relationship("app.modules.curriculum.models.Topic")
+    lesson = relationship("app.modules.curriculum.models.Lesson")
+    creator = relationship("app.modules.auth.models.User")
 
 
 class QuestionOption(Base):

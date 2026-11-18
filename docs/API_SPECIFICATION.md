@@ -185,11 +185,112 @@ Tất cả các endpoint chương trình học đều hỗ trợ kiểm soát ph
 
 ---
 
-## 3. NGÂN HÀNG CÂU HỎI & ĐỀ THI (QUESTIONS & EXAMS)
+## 3. NGÂN HÀNG CÂU HỎI (QUESTION BANK)
 
-- `GET /api/v1/questions` — Danh sách câu hỏi (Lọc theo môn, lớp, chủ đề, độ khó). [Giáo viên / Admin]
-- `POST /api/v1/questions` — Tạo câu hỏi mới kèm phương án và KaTeX. [Giáo viên / Admin]
-- `GET /api/v1/exams` — Danh sách đề kiểm tra và đề thi thử công khai.
+### 3.1. Nguyên Tắc Bảo Mật & Phân Quyền (RBAC & Confidentiality)
+- **Bảo mật đáp án tuyệt đối**: Học sinh (STUDENT) hoặc người dùng chưa đăng nhập khi gọi API danh sách hoặc chi tiết câu hỏi sẽ nhận schema `QuestionStudentResponse`. Trong schema này, trường `is_correct` trong từng phương án trắc nghiệm **hoàn toàn bị loại bỏ** để chống gian lận thi cử.
+- **Quyền hạn tạo & sửa**: Chỉ `TEACHER`, `ADMIN`, `SUPERADMIN` mới có quyền tạo câu hỏi.
+- **Ranh giới sở hữu (Teacher Ownership Boundary)**: Giáo viên chỉ có quyền sửa hoặc xóa câu hỏi do chính mình tạo ra (`creator_id == user.id`). Nếu cố tình sửa câu hỏi của giáo viên khác, hệ thống lập tức trả về `403 Forbidden`. Quản trị viên (`ADMIN`/`SUPERADMIN`) có quyền duyệt và can thiệp toàn bộ.
+- **Bản nháp (Drafts)**: Câu hỏi ở trạng thái `is_public: false` chỉ hiển thị với giáo viên và admin; học sinh truy cập sẽ nhận `404 Not Found`.
+
+### 3.2. Chi Tiết Endpoints
+- **`GET /api/v1/questions`**
+  - **Mô tả**: Danh sách câu hỏi có phân trang và bộ lọc chuyên sâu.
+  - **Query Parameters**:
+    - `grade_id`: Khối lớp (1 đến 12).
+    - `subject_id`: Mã môn học (ví dụ: `toan-11`).
+    - `chapter_id`: Mã chương.
+    - `topic_id`: Mã chủ đề.
+    - `lesson_id`: Mã bài học.
+    - `difficulty_level`: `RECOGNITION`, `COMPREHENSION`, `APPLICATION`, `HIGH_APPLICATION`.
+    - `question_type`: `SINGLE_CHOICE`, `MULTIPLE_CHOICE`, `TRUE_FALSE`, `SHORT_ANSWER`, `NUMERIC`, `ESSAY`.
+    - `creator_id`: Lọc theo giáo viên tạo.
+    - `is_public`: `true` hoặc `false` (chỉ áp dụng cho giáo viên/admin).
+    - `search`: Từ khóa tìm kiếm trong nội dung câu hỏi hoặc thẻ tags.
+    - `page` (default: 1), `page_size` (default: 20, max: 100).
+  - **Response 200 (Dành cho Giáo viên/Admin)**:
+    ```json
+    {
+      "items": [
+        {
+          "id": "q-toan11-01",
+          "topic_id": "topic-toan11-ptlg",
+          "lesson_id": "lesson-toan11-01",
+          "creator_id": "user-teacher-01",
+          "question_type": "SINGLE_CHOICE",
+          "content": "Tìm tất cả các nghiệm của phương trình $\\sin x = \\frac{1}{2}$.",
+          "difficulty_level": "RECOGNITION",
+          "explanation": "Ta có $\\sin x = \\frac{1}{2} = \\sin \\frac{\\pi}{6}$...",
+          "hint": "Nhớ lại góc đặc biệt có $\\sin$ bằng $\\frac{1}{2}$...",
+          "tags": "lượng giác, 11",
+          "is_public": true,
+          "created_at": "2026-11-18T19:54:00Z",
+          "updated_at": "2026-11-18T19:54:00Z",
+          "options": [
+            { "id": "opt-1", "option_key": "A", "content": "...", "is_correct": false, "order_index": 1 },
+            { "id": "opt-2", "option_key": "B", "content": "...", "is_correct": true, "order_index": 2 }
+          ],
+          "creator_name": "Thầy Nguyễn Hoàng Nam",
+          "topic_title": "Phương trình lượng giác cơ bản"
+        }
+      ],
+      "total": 1,
+      "page": 1,
+      "page_size": 20,
+      "total_pages": 1
+    }
+    ```
+  - **Response 200 (Dành cho Học sinh - Bảo mật)**:
+    ```json
+    {
+      "items": [
+        {
+          "id": "q-toan11-01",
+          "topic_id": "topic-toan11-ptlg",
+          "lesson_id": "lesson-toan11-01",
+          "question_type": "SINGLE_CHOICE",
+          "content": "Tìm tất cả các nghiệm của phương trình $\\sin x = \\frac{1}{2}$.",
+          "difficulty_level": "RECOGNITION",
+          "tags": "lượng giác, 11",
+          "hint": "Nhớ lại góc đặc biệt...",
+          "options": [
+            { "id": "opt-1", "option_key": "A", "content": "...", "order_index": 1 },
+            { "id": "opt-2", "option_key": "B", "content": "...", "order_index": 2 }
+          ]
+        }
+      ],
+      "total": 1,
+      "page": 1,
+      "page_size": 20,
+      "total_pages": 1
+    }
+    ```
+
+- **`GET /api/v1/questions/{question_id}`**
+  - **Mô tả**: Xem chi tiết câu hỏi (tự động lọc đáp án nếu là học sinh).
+
+- **`POST /api/v1/questions`**
+  - **Quyền hạn**: `TEACHER`, `ADMIN`, `SUPERADMIN`.
+  - **Validation Rules**:
+    - `SINGLE_CHOICE`: Phải có đúng 1 đáp án đúng (`is_correct: true`), tối thiểu 2 phương án.
+    - `MULTIPLE_CHOICE`: Tối thiểu 1 đáp án đúng, tối thiểu 2 phương án.
+    - `TRUE_FALSE`: Phải có đúng 2 phương án, đúng 1 đáp án đúng.
+    - Không được trùng mã `option_key` (A, B, C...).
+  - **Response 201**: Thông tin câu hỏi vừa tạo.
+
+- **`PATCH /api/v1/questions/{question_id}`**
+  - **Quyền hạn**: Giáo viên sở hữu hoặc Admin. Cho phép cập nhật từng phần (câu hỏi, lời giải, độ khó, hoặc thay đổi toàn bộ danh sách phương án).
+
+- **`DELETE /api/v1/questions/{question_id}`**
+  - **Quyền hạn**: Giáo viên sở hữu hoặc Admin.
+  - **Response 204**: No Content.
+
+- **`POST /api/v1/questions/{question_id}/toggle-publish`**
+  - **Quyền hạn**: Giáo viên sở hữu hoặc Admin. Chuyển đổi trạng thái giữa Bản nháp (`false`) và Công khai (`true`).
+
+---
+
+## 4. ĐỀ THI & PHÒNG THI TRỰC TUYẾN (EXAMS & EXAMINATION ENGINE)
 - `POST /api/v1/exams` — Tạo đề thi mới (Tự động từ ngân hàng hoặc chọn lọc thủ công). [Giáo viên]
 - `GET /api/v1/exams/{exam_id}` — Chi tiết đề thi (thông tin tổng quan trước khi vào phòng thi).
 - `POST /api/v1/exams/{exam_id}/start` — Bắt đầu một lượt thi mới (Khởi tạo `exam_attempt` và trả về danh sách câu hỏi).

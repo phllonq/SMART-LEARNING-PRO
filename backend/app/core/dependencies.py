@@ -66,6 +66,29 @@ async def get_current_user(
     return user
 
 
+async def get_optional_current_user(
+    token: Optional[str] = Depends(get_token_from_request),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    """Optionally validate token and fetch active user if present, otherwise return None."""
+    if not token:
+        return None
+    try:
+        payload = decode_token(token)
+        user_id: Optional[str] = payload.get("sub")
+        token_type: Optional[str] = payload.get("type")
+        if not user_id or token_type != "access":
+            return None
+        query = select(User).where(User.id == user_id)
+        result = await db.execute(query)
+        user = result.scalar_one_or_none()
+        if user and user.is_active:
+            return user
+        return None
+    except Exception:
+        return None
+
+
 def require_roles(*allowed_roles: UserRole):
     """RBAC Dependency: Require current user to have one of the specified roles."""
     async def role_checker(current_user: User = Depends(get_current_user)) -> User:

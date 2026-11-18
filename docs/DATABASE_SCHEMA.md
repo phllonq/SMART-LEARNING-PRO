@@ -125,16 +125,19 @@ erDiagram
 
 ### 2.3. Nhóm Ngân Hàng Câu Hỏi & Đề Thi (Questions & Exams)
 9. **`questions`**:
-   - `id`: VARCHAR(36), PK
+   - `id`: VARCHAR(36) / UUID, Primary Key
    - `topic_id`: VARCHAR(36), FK -> `topics.id`, ON DELETE SET NULL
+   - `lesson_id`: VARCHAR(36), FK -> `lessons.id`, ON DELETE SET NULL
    - `creator_id`: VARCHAR(36), FK -> `users.id`, ON DELETE SET NULL
    - `question_type`: VARCHAR(30), NOT NULL (SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE, SHORT_ANSWER, NUMERIC, ESSAY)
-   - `content`: TEXT, NOT NULL (Có công thức KaTeX)
+   - `content`: TEXT, NOT NULL (Hỗ trợ công thức KaTeX)
    - `difficulty_level`: VARCHAR(20), NOT NULL (RECOGNITION, COMPREHENSION, APPLICATION, HIGH_APPLICATION)
    - `explanation`: TEXT (Lời giải chi tiết chuẩn kèm công thức KaTeX)
    - `hint`: TEXT (Gợi ý Socratic khi học sinh gặp khó khăn)
-   - `is_public`: BOOLEAN, DEFAULT TRUE
+   - `tags`: VARCHAR(255) (Thẻ chủ đề, từ khóa tìm kiếm)
+   - `is_public`: BOOLEAN, DEFAULT TRUE (Trạng thái xuất bản: True = công khai, False = bản nháp)
    - `created_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
+   - `updated_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
 
 10. **`question_options`**:
     - `id`: VARCHAR(36), PK
