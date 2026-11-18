@@ -1,5 +1,34 @@
 # CHANGELOG — SMART LEARNING PRO
 
+## [0.5.0] - 2026-11-19
+### Added
+- **Online Examination Engine & Auto-Grading (`/api/v1/exams/*`)**:
+  - `GET /exams/available`: Danh sách đề thi đang mở cho học sinh, kiểm tra khung thời gian và giới hạn lượt thi (`max_attempts`).
+  - `POST /exams/{exam_id}/start`: Bắt đầu làm bài thi với bản chụp bất biến (`questions_snapshot_json`) **đã loại bỏ hoàn toàn đáp án đúng và lời giải** để chống gian lận.
+  - `GET /exams/attempts/{attempt_id}`: Khôi phục trạng thái làm bài và từ điển các câu trả lời học sinh đã lưu trước đó (`saved_answers`).
+  - `POST /exams/attempts/{attempt_id}/questions/{question_id}/autosave`: Tự động lưu đáp án nền (debounce real-time) hỗ trợ đơn lựa chọn, đa lựa chọn, đánh dấu câu hỏi cần xem lại (`is_flagged`) và thời gian làm bài.
+  - `POST /exams/attempts/{attempt_id}/submit`: Nộp bài thi và kích hoạt **Server-side Auto Grading Engine**:
+    - Chấm điểm tự động các dạng câu hỏi Single Choice, Multiple Choice, True/False, Short Answer.
+    - Tính điểm chi tiết từng câu (`points_awarded`), tổng điểm (`total_score`), tỷ lệ chính xác (`accuracy_percentage`), phân loại Đạt / Không đạt (`is_passed`).
+    - Lưu kết quả phân tích thống kê vào bảng `exam_results`.
+  - `GET /exams/attempts/{attempt_id}/review`: Xem lại chi tiết từng câu hỏi, đáp án học sinh đã chọn, đáp án chuẩn và lời giải KaTeX sau khi nộp bài (nếu đề thi bật `allow_review`).
+- **Quản lý đề thi dành cho Giáo viên & Quản trị viên**:
+  - `GET /exams`: Phân trang, lọc theo môn học, khối lớp, trạng thái và giáo viên.
+  - `POST /exams`: Tạo đề thi mới ở trạng thái `DRAFT` hoặc `PUBLISHED`.
+  - `GET /exams/{exam_id}`: Chi tiết cấu hình và danh sách câu hỏi kèm điểm số.
+  - `PATCH /exams/{exam_id}`: Cập nhật thông số đề thi (kiểm soát quyền sở hữu giáo viên).
+  - `POST /exams/{exam_id}/questions`: Thêm câu hỏi từ ngân hàng câu hỏi vào đề thi với trọng số điểm riêng.
+  - `DELETE /exams/{exam_id}/questions/{question_id}`: Gỡ câu hỏi khỏi đề thi.
+  - `POST /exams/{exam_id}/publish`: Xuất bản đề thi (chặn xuất bản nếu đề chưa có câu hỏi).
+  - `POST /exams/{exam_id}/archive`: Lưu trữ đề thi (đóng phòng thi).
+  - `GET /exams/{exam_id}/submissions`: Thống kê kết quả nộp bài của toàn bộ học sinh.
+- **Ranh giới sở hữu và kiểm soát gian lận**:
+  - Ranh giới quyền sở hữu giáo viên (Teacher Ownership Boundary) chặn 403 khi sửa/xóa/lưu trữ đề thi của giáo viên khác; Quản trị viên có quyền Admin Override.
+  - Tách biệt hoàn toàn câu hỏi đề thi snapshot với thay đổi sau này trong Ngân hàng câu hỏi.
+- **Bộ kiểm thử tự động chuyên sâu**:
+  - Tạo `backend/tests/test_exams.py` với 2 test suites bao quát toàn bộ quy trình giáo viên và học sinh.
+  - Toàn bộ backend test suite đạt **19/19 tests PASS (100%)** trong 2.91 giây.
+
 ## [0.4.0] - 2026-11-18
 ### Added
 - **Question Bank Module (`/api/v1/questions/*`)**:

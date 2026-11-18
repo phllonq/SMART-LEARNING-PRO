@@ -290,14 +290,100 @@ Tất cả các endpoint chương trình học đều hỗ trợ kiểm soát ph
 
 ---
 
-## 4. ĐỀ THI & PHÒNG THI TRỰC TUYẾN (EXAMS & EXAMINATION ENGINE)
-- `POST /api/v1/exams` — Tạo đề thi mới (Tự động từ ngân hàng hoặc chọn lọc thủ công). [Giáo viên]
-- `GET /api/v1/exams/{exam_id}` — Chi tiết đề thi (thông tin tổng quan trước khi vào phòng thi).
-- `POST /api/v1/exams/{exam_id}/start` — Bắt đầu một lượt thi mới (Khởi tạo `exam_attempt` và trả về danh sách câu hỏi).
-- `POST /api/v1/exams/attempts/{attempt_id}/save-answer` — Lưu câu trả lời tức thì (Autosave background).
-  - **Body**: `{ "question_id": "...", "selected_option_id": "...", "answer_text": "...", "is_flagged": false }`
-- `POST /api/v1/exams/attempts/{attempt_id}/submit` — Nộp bài thi, kích hoạt engine tự động chấm điểm.
-- `GET /api/v1/exams/attempts/{attempt_id}/result` — Xem bảng điểm kết quả, số câu đúng/sai, độ chính xác.
+## 4. ĐỀ THI & PHÒNG THI TRỰC TUYẾN (EXAMINATION ENGINE & AUTO-GRADING)
+
+### 4.1. Dành Cho Học Sinh (Student Examination Flow)
+- **`GET /api/v1/exams/available`**
+  - **Mô tả**: Lấy danh sách các đề thi đã xuất bản (`PUBLISHED`), đang trong khung thời gian hợp lệ (`start_time` / `end_time`), và học sinh chưa vượt quá giới hạn lượt thi (`max_attempts`).
+  - **Response 200**: Danh sách `ExamSummaryResponse`.
+
+- **`POST /api/v1/exams/{exam_id}/start`**
+  - **Mô tả**: Bắt đầu làm bài thi hoặc khôi phục lượt thi đang diễn ra (`IN_PROGRESS`).
+  - **Bảo mật tuyệt đối**: Tạo bản chụp đề thi bất biến (`questions_snapshot_json`) đã **loại bỏ hoàn toàn** trường `is_correct`, `explanation`, `solution_key`.
+  - **Response 200**:
+    ```json
+    {
+      "attempt_id": "attempt-uuid-1",
+      "exam_id": "exam-uuid-1",
+      "attempt_number": 1,
+      "started_at": "2026-11-19T00:00:00Z",
+      "deadline_at": "2026-11-19T00:45:00Z",
+      "duration_minutes": 45,
+      "total_questions": 2,
+      "questions": [
+        {
+          "question_id": "q-toan11-01",
+          "points": 5.0,
+          "order_index": 1,
+          "content": "Tính đạo hàm của hàm số $y = \\sin(2x)$.",
+          "question_type": "SINGLE_CHOICE",
+          "options": [
+            { "id": "opt-1", "option_key": "A", "content": "$2\\cos(2x)$" },
+            { "id": "opt-2", "option_key": "B", "content": "$\\cos(2x)$" }
+          ]
+        }
+      ]
+    }
+    ```
+
+- **`GET /api/v1/exams/attempts/{attempt_id}`**
+  - **Mô tả**: Lấy lại snapshot câu hỏi và từ điển các câu trả lời học sinh đã lưu trước đó (`saved_answers`) để khôi phục giao diện làm bài khi tải lại trang hoặc rớt mạng.
+
+- **`POST /api/v1/exams/attempts/{attempt_id}/questions/{question_id}/autosave`**
+  - **Mô tả**: Autosave câu trả lời nền (debounce theo thời gian thực).
+  - **Body**:
+    ```json
+    {
+      "selected_option_id": "opt-1",
+      "selected_option_ids": ["opt-1"],
+      "answer_text": null,
+      "is_flagged": false,
+      "time_spent_seconds": 15
+    }
+    ```
+  - **Response 200**: `{ "status": "SAVED", "attempt_id": "...", "question_id": "...", "saved_at": "..." }`
+
+- **`POST /api/v1/exams/attempts/{attempt_id}/submit`**
+  - **Mô tả**: Học sinh nộp bài thi (hoặc hệ thống tự động nộp bài khi hết giờ). Kích hoạt **Server-side Auto Grading Engine**:
+    - So khớp đáp án đã lưu với cơ sở dữ liệu gốc.
+    - Hỗ trợ câu hỏi đơn lựa chọn (`SINGLE_CHOICE`), đa lựa chọn (`MULTIPLE_CHOICE`), Đúng/Sai (`TRUE_FALSE`), câu trả lời ngắn (`SHORT_ANSWER`).
+    - Tính điểm chi tiết từng câu (`points_awarded`), tổng điểm (`total_score`), tỷ lệ chính xác (`accuracy_percentage`).
+    - Tự động tạo bản ghi thống kê `exam_results`.
+  - **Response 200**:
+    ```json
+    {
+      "attempt_id": "attempt-uuid-1",
+      "exam_id": "exam-uuid-1",
+      "status": "GRADED",
+      "total_score": 10.0,
+      "maximum_score": 10.0,
+      "passing_score": 5.0,
+      "is_passed": true,
+      "correct_answers_count": 2,
+      "wrong_answers_count": 0,
+      "skipped_answers_count": 0,
+      "accuracy_percentage": 100.0,
+      "feedback_summary": "Xuất sắc! Bạn đã vượt qua bài thi với kết quả tuyệt đối.",
+      "submitted_at": "2026-11-19T00:15:00Z",
+      "review_allowed": true
+    }
+    ```
+
+- **`GET /api/v1/exams/attempts/{attempt_id}/review`**
+  - **Mô tả**: Xem lại chi tiết từng câu hỏi, đáp án học sinh đã chọn, đáp án đúng và lời giải chi tiết (chỉ khả dụng sau khi nộp bài và nếu đề thi cho phép `allow_review: true`).
+
+---
+
+### 4.2. Dành Cho Giáo Viên & Quản Trị Viên (Teacher Exam Management & RBAC)
+- **`GET /api/v1/exams`**: Danh sách đề thi có phân trang, lọc theo môn học (`subject_id`), khối lớp (`grade_id`), trạng thái (`status_filter`), giáo viên (`creator_id`).
+- **`POST /api/v1/exams`**: Tạo đề thi mới (trạng thái ban đầu `DRAFT` hoặc `PUBLISHED`).
+- **`GET /api/v1/exams/{exam_id}`**: Chi tiết cấu hình đề thi và danh sách câu hỏi kèm điểm số.
+- **`PATCH /api/v1/exams/{exam_id}`**: Cập nhật thông số đề thi (Giáo viên sở hữu hoặc Admin).
+- **`POST /api/v1/exams/{exam_id}/questions`**: Thêm câu hỏi từ Ngân hàng câu hỏi vào đề thi với điểm số và thứ tự tùy chỉnh.
+- **`DELETE /api/v1/exams/{exam_id}/questions/{question_id}`**: Gỡ câu hỏi ra khỏi đề thi.
+- **`POST /api/v1/exams/{exam_id}/publish`**: Xuất bản đề thi (Bắt buộc đề thi phải có ít nhất 1 câu hỏi).
+- **`POST /api/v1/exams/{exam_id}/archive`**: Lưu trữ đề thi (Đóng phòng thi).
+- **`GET /api/v1/exams/{exam_id}/submissions`**: Bảng tổng hợp kết quả làm bài của tất cả học sinh trong đề thi (điểm số, thời gian nộp, trạng thái đạt/không đạt).
 
 ---
 

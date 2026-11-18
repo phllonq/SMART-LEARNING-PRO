@@ -41,8 +41,10 @@
 - [x] Question Bank API Router (`/api/v1/questions/*` - CRUD, search, filters, publish toggle, teacher ownership, answer confidentiality)
 - [x] Question Bank Automated Tests (6 test suites, 100% pass)
 - [x] Examination models & 45-minute sample exam seeded
-- [ ] Exam Taking & Autosave API Router (`/api/v1/exams/*`)
-- [ ] Automatic Grading Engine & Result computation
+- [x] Exam Taking & Autosave API Router (`/api/v1/exams/*` - Student start, autosave debounce, submit, review)
+- [x] Automatic Grading Engine & Result computation (`ExamResult`, scoring, accuracy, passing check)
+- [x] Teacher Exam Management & RBAC (`/api/v1/exams` - CRUD, add/remove questions, publish/archive, submissions review)
+- [x] Examination Automated Tests (2 comprehensive test suites, 100% pass)
 
 ## Phase 5: Teacher & Admin Portals
 - [x] Classroom & Assignment models seeded
@@ -73,7 +75,7 @@
 - [x] Auth flow unit & integration tests passing (100%)
 - [x] Health check test passing (100%)
 - [x] RBAC permission tests passing (100%)
-- [ ] Learning modules & grading integration tests
+- [x] Learning modules & grading integration tests (Curriculum: 8 suites, Questions: 6 suites, Exams: 2 suites - All PASS)
 - [ ] AI engine fallback tests
 
 ## Phase 10: Docker & Release Readiness

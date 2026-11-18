@@ -53,3 +53,27 @@
       6. Draft question hiding from students and toggle-publish functionality.
     - Executed complete backend test suite: **17/17 tests PASSED in 2.01s** (exit code 0).
   - **Phase 6 Documentation**: Updated `docs/DATABASE_SCHEMA.md`, `docs/API_SPECIFICATION.md`, `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, `CHANGELOG.md`.
+
+## Session 5: Online Examination Engine & Autosave Auto-Grading (Phase 4)
+- **Timestamp**: 2026-11-18 23:20:00 - 2026-11-19 00:15:00
+- **Action**:
+  - **Phase 1 Recovery & Schema Evolution**:
+    - Inspected `Exam`, `ExamQuestion`, `ExamAttempt`, `StudentAnswer`, and `ExamResult` models.
+    - Applied non-destructive schema migrations to `database/smart_learning.db`: added `grade_id`, `start_time`, `end_time`, `status`, `updated_at` to `exams`; `deadline_at`, `maximum_score`, `questions_snapshot_json` to `exam_attempts`; `selected_option_ids_json`, `updated_at` to `student_answers`.
+  - **Phase 2 & 3 Data Model & Engine Implementation**:
+    - Created [backend/app/modules/exams/schemas.py](file:///E:/SMART-LEARNING-PRO/backend/app/modules/exams/schemas.py): Pydantic v2 schemas for exam creation/update, student attempt start, autosave payload, automatic grading submission, and submission summaries.
+    - Created [backend/app/modules/exams/service.py](file:///E:/SMART-LEARNING-PRO/backend/app/modules/exams/service.py):
+      - Teacher exam management: draft/publish/archive, add/remove questions, enforce teacher ownership boundaries and admin override.
+      - Student workflow: check eligibility & attempt limits (`max_attempts`), start attempt with immutable sanitized snapshot (`questions_snapshot_json`) hiding all answers and solutions.
+      - Real-time autosave: upsert student answers on debounced background calls.
+      - Server-side auto-grading engine: grade single choice, multiple choice, true/false, short answer; calculate points, total score, accuracy percentage, and persist `ExamResult`.
+      - Submission review: allow review with full solutions only when `allow_review=true` after submission.
+    - Created [backend/app/modules/exams/router.py](file:///E:/SMART-LEARNING-PRO/backend/app/modules/exams/router.py): REST endpoints under `/api/v1/exams`.
+    - Registered `exams_router` in [backend/app/main.py](file:///E:/SMART-LEARNING-PRO/backend/app/main.py).
+  - **Phase 4 & 5 Security & Automated Tests**:
+    - Created [backend/tests/test_exams.py](file:///E:/SMART-LEARNING-PRO/backend/tests/test_exams.py):
+      - `test_teacher_exam_management_and_ownership`: Tests exam creation, blocking publication with 0 questions, adding questions, publishing, teacher ownership 403 boundary, and admin override.
+      - `test_student_examination_flow_and_confidentiality`: Tests viewing available exams, starting attempt with answer confidentiality (sanitized snapshot), autosaving answers, submitting attempt, auto-grading calculation, accuracy percentage, and exam result review.
+    - Resolved SQLAlchemy identity map in-memory relationship sync (`db.expire`, `populate_existing=True`) and keyword collision in `create_exam`.
+    - Verified entire backend test suite: **19/19 tests PASSED in 2.91s** (exit code 0).
+  - **Phase 6 Documentation**: Updated `docs/DATABASE_SCHEMA.md`, `docs/API_SPECIFICATION.md`, `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, `CHANGELOG.md`.

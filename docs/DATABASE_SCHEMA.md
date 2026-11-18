@@ -151,6 +151,7 @@ erDiagram
     - `id`: VARCHAR(36), PK
     - `creator_id`: VARCHAR(36), FK -> `users.id`
     - `subject_id`: VARCHAR(50), FK -> `subjects.id`
+    - `grade_id`: INTEGER, FK -> `grades.id`, ON DELETE SET NULL
     - `title`: VARCHAR(255), NOT NULL
     - `description`: TEXT
     - `duration_minutes`: INTEGER, NOT NULL (ví dụ: 45, 60, 90)
@@ -160,8 +161,12 @@ erDiagram
     - `shuffle_options`: BOOLEAN, DEFAULT TRUE
     - `allow_review`: BOOLEAN, DEFAULT TRUE
     - `max_attempts`: INTEGER, DEFAULT 1
+    - `status`: VARCHAR(20), DEFAULT 'PUBLISHED' (DRAFT, PUBLISHED, ARCHIVED)
     - `is_published`: BOOLEAN, DEFAULT TRUE
+    - `start_time`: TIMESTAMP WITH TIME ZONE, NULL (Thời điểm mở đề thi theo lịch)
+    - `end_time`: TIMESTAMP WITH TIME ZONE, NULL (Thời điểm đóng đề thi theo lịch)
     - `created_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
+    - `updated_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
 
 12. **`exam_questions`**:
     - `id`: VARCHAR(36), PK
@@ -175,23 +180,30 @@ erDiagram
     - `exam_id`: VARCHAR(36), FK -> `exams.id`, ON DELETE CASCADE
     - `student_id`: VARCHAR(36), FK -> `users.id`, ON DELETE CASCADE
     - `attempt_number`: INTEGER, DEFAULT 1
-    - `status`: VARCHAR(20), DEFAULT 'IN_PROGRESS' (IN_PROGRESS, SUBMITTED, GRADED, ABANDONED)
+    - `status`: VARCHAR(20), DEFAULT 'IN_PROGRESS' (IN_PROGRESS, SUBMITTED, AUTO_SUBMITTED, GRADED, ABANDONED)
     - `started_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
+    - `deadline_at`: TIMESTAMP WITH TIME ZONE, NULL (Thời hạn kết thúc phòng thi = started_at + duration_minutes)
     - `submitted_at`: TIMESTAMP WITH TIME ZONE, NULL
     - `score`: DOUBLE PRECISION, NULL
+    - `maximum_score`: DOUBLE PRECISION, DEFAULT 10.0
     - `time_spent_seconds`: INTEGER, DEFAULT 0
+    - `questions_snapshot_json`: TEXT, NULL (Bản chụp đề thi bất biến đã ẩn đáp án đúng, cách ly với ngân hàng đề gốc)
+    - `created_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
+    - `updated_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
 
 14. **`student_answers`**:
     - `id`: VARCHAR(36), PK
     - `attempt_id`: VARCHAR(36), FK -> `exam_attempts.id`, ON DELETE CASCADE
     - `question_id`: VARCHAR(36), FK -> `questions.id`, ON DELETE CASCADE
-    - `selected_option_id`: VARCHAR(36), NULL
-    - `answer_text`: TEXT, NULL
+    - `selected_option_id`: VARCHAR(36), NULL (Dành cho câu hỏi đơn lựa chọn)
+    - `selected_option_ids_json`: TEXT, NULL (Dành cho câu hỏi nhiều lựa chọn JSON list)
+    - `answer_text`: TEXT, NULL (Dành cho câu hỏi tự luận ngắn / số học)
     - `is_correct`: BOOLEAN, NULL
     - `points_awarded`: DOUBLE PRECISION, DEFAULT 0.0
     - `is_flagged`: BOOLEAN, DEFAULT FALSE
     - `time_spent_seconds`: INTEGER, DEFAULT 0
     - `answered_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
+    - `updated_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
 
 15. **`exam_results`**:
     - `id`: VARCHAR(36), PK
