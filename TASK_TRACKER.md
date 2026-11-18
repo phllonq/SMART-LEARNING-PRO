@@ -35,7 +35,8 @@
 
 ## Phase 4: Learning Modules
 - [x] Curriculum models & sample data seeded (Grades 10-12, Math/Physics/Chem, Chapters, Topics, Lessons, KaTeX)
-- [ ] Curriculum API Router (`/api/v1/curriculum/*`)
+- [x] Curriculum API Router (`/api/v1/curriculum/*` - Grades, Subjects, Chapters, Topics, Lessons, KaTeX, RBAC, Pagination)
+- [x] Curriculum Automated Tests (8 test suites, 100% pass)
 - [x] Question Bank models & sample KaTeX questions seeded
 - [ ] Question Bank API Router (`/api/v1/questions/*`)
 - [x] Examination models & 45-minute sample exam seeded

@@ -57,11 +57,131 @@ Tất cả các API tuân thủ tiêu chuẩn RESTful, trả về dữ liệu ch
 
 ## 2. CHƯƠNG TRÌNH HỌC (CURRICULUM)
 
-- `GET /api/v1/curriculum/grades` — Danh sách các khối lớp (Lớp 6 đến 12).
-- `GET /api/v1/curriculum/grades/{grade_id}/subjects` — Danh sách môn học của khối lớp.
-- `GET /api/v1/curriculum/subjects/{subject_id}` — Chi tiết môn học, danh sách chương và chủ đề.
-- `GET /api/v1/curriculum/topics/{topic_id}/lessons` — Danh sách bài học của chủ đề.
-- `GET /api/v1/curriculum/lessons/{lesson_id}` — Chi tiết bài học (nội dung Markdown, KaTeX, video, tài liệu đính kèm).
+Tất cả các endpoint chương trình học đều hỗ trợ kiểm soát phân quyền RBAC:
+- **Học sinh (STUDENT) & Khách vãng lai**: Chỉ xem được các môn học, bài giảng đã công khai (`is_published: true`).
+- **Giáo viên (TEACHER) & Admin (ADMIN / SUPERADMIN)**: Có thể xem được cả bản nháp chưa công khai và có quyền tạo/sửa chương, chủ đề, bài học.
+- **Admin**: Có quyền tạo/sửa môn học và xóa bài học.
+
+### 2.1. Danh Sách Khối Lớp (Grades)
+- **`GET /api/v1/curriculum/grades`**
+  - **Mô tả**: Lấy danh sách toàn bộ các khối lớp (Lớp 6 đến Lớp 12).
+  - **Quyền hạn**: Công khai.
+  - **Response 200**:
+    ```json
+    [
+      { "id": 10, "name": "Khối 10", "description": "Chương trình GDPT 2018 Lớp 10", "order_index": 1 },
+      { "id": 11, "name": "Khối 11", "description": "Chương trình GDPT 2018 Lớp 11", "order_index": 2 },
+      { "id": 12, "name": "Khối 12", "description": "Chương trình GDPT 2018 Lớp 12", "order_index": 3 }
+    ]
+    ```
+
+### 2.2. Môn Học (Subjects)
+- **`GET /api/v1/curriculum/grades/{grade_id}/subjects`**
+  - **Mô tả**: Lấy danh sách môn học theo khối lớp (hỗ trợ phân trang: `page`, `page_size`).
+  - **Quyền hạn**: Công khai (chỉ trả về môn đã công khai). Giáo viên/Admin thấy toàn bộ.
+  - **Response 200**:
+    ```json
+    {
+      "items": [
+        {
+          "id": "toan-11",
+          "grade_id": 11,
+          "name": "Toán học 11",
+          "code": "MATH11",
+          "icon": "Calculator",
+          "color": "#635BFF",
+          "is_published": true,
+          "order_index": 1
+        }
+      ],
+      "total": 3,
+      "page": 1,
+      "page_size": 20,
+      "total_pages": 1
+    }
+    ```
+
+- **`GET /api/v1/curriculum/subjects`**
+  - **Mô tả**: Lấy toàn bộ môn học, hỗ trợ lọc theo query `grade_id`, phân trang `page`, `page_size`.
+
+- **`GET /api/v1/curriculum/subjects/{subject_id}`**
+  - **Mô tả**: Xem thông tin chi tiết của môn học.
+
+- **`POST /api/v1/curriculum/subjects`**
+  - **Quyền hạn**: `ADMIN`, `SUPERADMIN`.
+  - **Body**: `{ "id": "tin-11", "grade_id": 11, "name": "Tin học 11", "code": "CS11", "is_published": true, "order_index": 4 }`
+  - **Response 201**: Thông tin môn học vừa tạo.
+
+### 2.3. Cây Đề Cương & Bài Học (Chapters, Topics, Lessons)
+- **`GET /api/v1/curriculum/subjects/{subject_id}/chapters`**
+  - **Mô tả**: Lấy toàn bộ cây cấu trúc Chương -> Chủ đề -> Tóm tắt Bài học của môn học.
+  - **Response 200**:
+    ```json
+    [
+      {
+        "id": "chap-toan11-01",
+        "subject_id": "toan-11",
+        "title": "Chương 1: Hàm số lượng giác và phương trình lượng giác",
+        "order_index": 1,
+        "topics": [
+          {
+            "id": "topic-toan11-ptlg",
+            "chapter_id": "chap-toan11-01",
+            "title": "Phương trình lượng giác cơ bản",
+            "description": "Nắm vững cách giải các phương trình sin x = m, cos x = m",
+            "order_index": 1,
+            "lessons": [
+              {
+                "id": "lesson-toan11-01",
+                "topic_id": "topic-toan11-ptlg",
+                "title": "Bài 1: Phương trình bậc nhất đối với một hàm số lượng giác",
+                "duration_minutes": 45,
+                "order_index": 1,
+                "has_video": true
+              }
+            ]
+          }
+        ]
+      }
+    ]
+    ```
+
+- **`POST /api/v1/curriculum/chapters`**
+  - **Quyền hạn**: `TEACHER`, `ADMIN`, `SUPERADMIN`.
+  - **Body**: `{ "subject_id": "toan-11", "title": "Chương 2: Dãy số", "order_index": 2 }`
+
+- **`POST /api/v1/curriculum/topics`**
+  - **Quyền hạn**: `TEACHER`, `ADMIN`, `SUPERADMIN`.
+  - **Body**: `{ "chapter_id": "uuid-...", "title": "Cấp số cộng", "order_index": 1 }`
+
+- **`GET /api/v1/curriculum/topics/{topic_id}/lessons`** & **`GET /api/v1/curriculum/chapters/{chapter_id}/lessons`**
+  - **Mô tả**: Lấy danh sách bài học theo topic hoặc theo cả chapter (hỗ trợ phân trang).
+
+- **`GET /api/v1/curriculum/lessons/{lesson_id}`**
+  - **Mô tả**: Chi tiết nội dung bài học, chứa công thức toán học KaTeX chuẩn (ví dụ: `$\sin x = m$`, `$\cos x = m$`) và danh sách tài liệu đính kèm (`materials`).
+  - **Response 200**:
+    ```json
+    {
+      "id": "lesson-toan11-01",
+      "topic_id": "topic-toan11-ptlg",
+      "title": "Bài 1: Phương trình bậc nhất đối với một hàm số lượng giác",
+      "content_markdown": "# Phương trình lượng giác cơ bản\n\n## 1. Phương trình $\\sin x = m$\n...",
+      "video_url": "https://www.youtube.com/embed/dQw4w9WgXcQ",
+      "duration_minutes": 45,
+      "order_index": 1,
+      "materials": []
+    }
+    ```
+
+- **`POST /api/v1/curriculum/lessons`** (Tạo bài học)
+  - **Quyền hạn**: `TEACHER`, `ADMIN`, `SUPERADMIN`.
+
+- **`PATCH /api/v1/curriculum/lessons/{lesson_id}`** (Cập nhật bài học)
+  - **Quyền hạn**: `TEACHER`, `ADMIN`, `SUPERADMIN`.
+
+- **`DELETE /api/v1/curriculum/lessons/{lesson_id}`** (Xóa bài học)
+  - **Quyền hạn**: `ADMIN`, `SUPERADMIN`.
+  - **Response 204**: No Content.
 
 ---
 
