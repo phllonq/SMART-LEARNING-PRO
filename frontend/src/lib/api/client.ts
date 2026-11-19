@@ -15,15 +15,15 @@ export class ApiClientError extends Error {
 
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("smart_learning_access_token");
+  return sessionStorage.getItem("smart_learning_session_token");
 }
 
 export function setAuthToken(token: string | null): void {
   if (typeof window === "undefined") return;
   if (token) {
-    localStorage.setItem("smart_learning_access_token", token);
+    sessionStorage.setItem("smart_learning_session_token", token);
   } else {
-    localStorage.removeItem("smart_learning_access_token");
+    sessionStorage.removeItem("smart_learning_session_token");
   }
 }
 

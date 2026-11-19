@@ -36,6 +36,11 @@ data/
 .env.test.local
 .env.production.local
 
+# Testing
+test-results/
+playwright-report/
+.last-run.json
+
 # IDE
 .idea/
 .vscode/

@@ -1,5 +1,27 @@
 # CHANGELOG — SMART LEARNING PRO
 
+## [0.7.1] - 2026-11-19
+### Verified & Hardened - Phase 6.1: Frontend Functional Integration & RBAC Audit
+- **Kiểm thử Tự động hóa E2E Playwright trên Google Chrome thực tế**:
+  - Cài đặt `@playwright/test` và thiết lập cấu hình `frontend/playwright.config.ts` chạy trên Google Chrome hệ thống (`channel: 'chrome'`).
+  - Viết 18 kịch bản kiểm thử E2E tích hợp thực tế kết nối trực tiếp FastAPI backend và Next.js frontend:
+    - `frontend/e2e/auth-rbac.spec.ts`: Xác thực, đăng nhập học sinh/giáo viên/quản trị, chặn truy cập trái phép, phân quyền RBAC và đăng xuất dọn session.
+    - `frontend/e2e/student-workflow.spec.ts`: Dữ liệu bảng điều khiển thời gian thực, danh sách lớp học, bắt lỗi mã mời không hợp lệ, cây môn học GDPT 2018, phòng luyện thi và bài tập về nhà.
+    - `frontend/e2e/teacher-workflow.spec.ts`: Thống kê giảng dạy, quản lý lớp học, hộp mã mời khổ lớn, danh sách học sinh, ngân hàng câu hỏi KaTeX kèm đáp án chuẩn, ngân hàng đề thi và quản lý bài tập xuyên lớp.
+  - Xây dựng kịch bản PowerShell `scripts/test_e2e.ps1` tự động khởi chạy và dọn dẹp tiến trình backend/frontend sạch sẽ.
+  - Kết quả kiểm thử E2E: **18/18 tests PASS (100%) trong 9.0s (Exit Code 0)**.
+- **Thắt chặt An ninh & Bảo mật Dữ liệu**:
+  - Chuyển đổi cơ chế lưu trữ JWT access token từ `localStorage` sang `sessionStorage` trong `frontend/src/lib/api/client.ts` để ngăn ngừa rò rỉ token qua persistent XSS.
+  - Viết lại bộ bóc tách công thức toán `MathKaTeX` bằng regex an toàn: văn bản thông thường được escape qua React bindings, công thức LaTeX được parse qua KaTeX an toàn.
+  - Đồng bộ hóa tài khoản đăng nhập nhanh trên giao diện (`/login`) với tài khoản thực tế được khởi tạo từ database seeder.
+  - Nâng cấp trải nghiệm xử lý mã mời lớp học: hiển thị thông báo lỗi thân thiện thay vì thông báo lỗi thô của backend.
+- **Tiêu chuẩn Chất lượng (Quality Gates)**:
+  - TypeScript Strict: **0 errors**.
+  - ESLint: **0 errors, 0 warnings**.
+  - Next.js Production Build: **21/21 routes compiled thành công**.
+  - Backend Pytest Suite: **31/31 tests PASS trong 6.70s**.
+  - Báo cáo chi tiết: Tạo [docs/PHASE_6_1_FUNCTIONAL_AUDIT.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_1_FUNCTIONAL_AUDIT.md).
+
 ## [0.7.0] - 2026-11-19
 ### Added - Phase 6: Frontend Foundation (Student, Teacher & Admin Portals)
 - **Kiến trúc Frontend Next.js 16 App Router & React 19**:

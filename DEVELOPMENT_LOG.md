@@ -182,3 +182,32 @@
   - **Documentation**:
     - Created `docs/FRONTEND_ARCHITECTURE.md` and `docs/FRONTEND_API_INTEGRATION.md`.
     - Updated `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, `CHANGELOG.md`, `README.md`.
+
+
+## Session 9: Frontend Functional Integration & RBAC Audit (Phase 6.1)
+- **Timestamp**: 2026-11-19 12:00:00 - 12:35:00
+- **Action**:
+  - **Audit & Security Hardening**:
+    - Audited token storage mechanism: Replaced persistent `localStorage` with `sessionStorage` in `frontend/src/lib/api/client.ts` to prevent token theft from XSS while maintaining full F5 page refresh capability and HttpOnly Cookie readiness.
+    - Security audit on math rendering: Rewrote `frontend/src/components/shared/math-katex.tsx` using a strict regex delimiter tokenizer. Raw text chunks are escaped naturally via React DOM bindings, while math formulas are passed to `katex.renderToString(..., { throwOnError: false })`, completely eliminating DOM XSS injection vectors.
+    - Aligned quick-fill authentication credentials with real seeded SQLite database records:
+      - Student: `hocsinh.an@smartlearning.vn` / `StudentPassword123!`
+      - Teacher: `giaovien.toan@smartlearning.vn` / `TeacherPassword123!`
+      - Admin: `admin@smartlearning.vn` / `AdminSecurePassword123!`
+    - Improved join classroom error handling in `frontend/src/app/student/classrooms/page.tsx` and `frontend/src/app/student/dashboard/page.tsx` to handle backend 404 responses gracefully with user-friendly Vietnamese notifications (`Mã mời không chính xác hoặc không tồn tại.`).
+  - **Automated Real Browser E2E Test Suite**:
+    - Installed `@playwright/test` and configured `frontend/playwright.config.ts` using system Google Chrome (`channel: 'chrome'`).
+    - Created PowerShell test orchestrator `scripts/test_e2e.ps1` that manages simultaneous background processes for FastAPI (port 8000) and Next.js (port 3000), checks health endpoints, executes the test suite, and ensures clean termination of all child processes.
+    - Created 18 end-to-end integration tests across 3 suites:
+      - `frontend/e2e/auth-rbac.spec.ts`: Landing page, Student/Teacher/Admin login redirects, unauthenticated route protection, role guard isolation, and logout session clearance.
+      - `frontend/e2e/student-workflow.spec.ts`: Live dashboard stats, enrolled classrooms, invalid invite code rejection, GDPT 2018 subject tree loading, exam lobby, and assignments list.
+      - `frontend/e2e/teacher-workflow.spec.ts`: Live metrics, classrooms management, large invite code display & student roster, KaTeX math question bank with answer confidentiality, exams bank, and assignments overview.
+    - Executed automated E2E test runner: **18/18 tests PASSED in 9.0s on Google Chrome (Exit Code 0)**.
+  - **Quality Gates & Regression Verification**:
+    - `cd frontend; npx tsc --noEmit`: **0 errors, EXIT CODE 0**.
+    - `cd frontend; npm run lint`: **0 errors, 0 warnings, EXIT CODE 0**.
+    - `cd frontend; npm run build`: **21/21 routes generated, EXIT CODE 0**.
+    - Backend Pytest (`backend/tests`): **31/31 passed in 6.70s (100% PASS), EXIT CODE 0**.
+  - **Documentation**:
+    - Authored comprehensive audit report [docs/PHASE_6_1_FUNCTIONAL_AUDIT.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_1_FUNCTIONAL_AUDIT.md) with full API contract verification table, security findings, and execution evidence.
+    - Updated `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, and `CHANGELOG.md`.

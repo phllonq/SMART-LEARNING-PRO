@@ -68,6 +68,19 @@
 - [x] Out-of-order network autosave packet protection
 - [x] Idempotent migration verification & 31/31 backend tests passing
 
+## Phase 6.1: Frontend Functional Integration & RBAC Audit
+- [x] Baseline API Contract Audit: verified 100% contracts across Auth, Curriculum, Classrooms, Questions, Exams, Assignments
+- [x] Token Storage Hardening: migrated JWT storage from `localStorage` to `sessionStorage` + HttpOnly cookie readiness
+- [x] Security Hardening: XSS protection in `MathKaTeX` component via regex delimiter parsing and React escaping
+- [x] Seeded Credentials Alignment: verified real database credentials for Student, Teacher, and Superadmin
+- [x] Automated E2E Setup: configured Playwright with real Google Chrome (`channel: 'chrome'`)
+- [x] Created 18 E2E test suites in `frontend/e2e/` (`auth-rbac.spec.ts`, `student-workflow.spec.ts`, `teacher-workflow.spec.ts`)
+- [x] Executed E2E test runner (`scripts/test_e2e.ps1`): **18/18 PASS in 9.0s (Exit Code 0)**
+- [x] Verification of Student Workflow: live dashboard, enrolled classrooms, invalid invite code handling, courses, exams lobby, homework
+- [x] Verification of Teacher Workflow: live metrics, classroom management, large invite code display, member roster, KaTeX question bank with answer confidentiality
+- [x] Verification of Quality Gates: TypeScript (0 errors), ESLint (0 errors, 0 warnings), Next.js Build (21/21 routes), Backend Pytest (31/31 PASS in 6.70s)
+- [x] Documentation: Created `docs/PHASE_6_1_FUNCTIONAL_AUDIT.md`
+
 ## Phase 7: AI Engine (Next Phase)
 - [ ] Gemini API integration for automated question diagnosis
 - [ ] Socratic AI Tutor interactive chat

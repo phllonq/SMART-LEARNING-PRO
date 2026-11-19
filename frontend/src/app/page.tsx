@@ -99,12 +99,12 @@ export default function HomePage() {
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
                 <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                  <span className="font-semibold text-slate-900 block">Học sinh (Lớp 10):</span>
-                  <code className="text-indigo-600 text-[11px]">student@smartlearning.vn</code>
+                  <span className="font-semibold text-slate-900 block">Học sinh (Lớp 11):</span>
+                  <code className="text-indigo-600 text-[11px]">hocsinh.an@smartlearning.vn</code>
                 </div>
                 <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                  <span className="font-semibold text-slate-900 block">Giáo viên Toán & Tin:</span>
-                  <code className="text-indigo-600 text-[11px]">teacher@smartlearning.vn</code>
+                  <span className="font-semibold text-slate-900 block">Giáo viên Toán:</span>
+                  <code className="text-indigo-600 text-[11px]">giaovien.toan@smartlearning.vn</code>
                 </div>
               </div>
             </div>

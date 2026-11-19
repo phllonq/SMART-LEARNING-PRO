@@ -45,7 +45,11 @@ export default function StudentClassroomsPage() {
       refetch();
     } catch (err: unknown) {
       if (err instanceof Error) {
-        setJoinError(err.message);
+        if (err.message.includes("not found") || err.message.includes("ClassroomCode")) {
+          setJoinError("Mã mời không chính xác hoặc không tồn tại.");
+        } else {
+          setJoinError(err.message);
+        }
       } else {
         setJoinError("Mã mời không chính xác hoặc bạn đã ở trong lớp này.");
       }

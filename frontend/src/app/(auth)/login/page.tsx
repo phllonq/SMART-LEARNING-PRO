@@ -132,7 +132,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    handleQuickFill("student@smartlearning.vn", "Password123!")
+                    handleQuickFill("hocsinh.an@smartlearning.vn", "StudentPassword123!")
                   }
                   className="flex flex-col items-center justify-center p-2.5 rounded-xl border border-indigo-100 bg-indigo-50/60 hover:bg-indigo-100/80 text-indigo-700 text-xs font-medium transition-colors"
                 >
@@ -143,7 +143,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    handleQuickFill("teacher@smartlearning.vn", "Password123!")
+                    handleQuickFill("giaovien.toan@smartlearning.vn", "TeacherPassword123!")
                   }
                   className="flex flex-col items-center justify-center p-2.5 rounded-xl border border-emerald-100 bg-emerald-50/60 hover:bg-emerald-100/80 text-emerald-700 text-xs font-medium transition-colors"
                 >
@@ -154,7 +154,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    handleQuickFill("admin@smartlearning.vn", "Password123!")
+                    handleQuickFill("admin@smartlearning.vn", "AdminSecurePassword123!")
                   }
                   className="flex flex-col items-center justify-center p-2.5 rounded-xl border border-amber-100 bg-amber-50/60 hover:bg-amber-100/80 text-amber-700 text-xs font-medium transition-colors"
                 >
