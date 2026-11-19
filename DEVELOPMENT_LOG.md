@@ -77,3 +77,26 @@
     - Resolved SQLAlchemy identity map in-memory relationship sync (`db.expire`, `populate_existing=True`) and keyword collision in `create_exam`.
     - Verified entire backend test suite: **19/19 tests PASSED in 2.91s** (exit code 0).
   - **Phase 6 Documentation**: Updated `docs/DATABASE_SCHEMA.md`, `docs/API_SPECIFICATION.md`, `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, `CHANGELOG.md`.
+
+## Session 6: Classroom & Homework Management (Phase 5)
+- **Timestamp**: 2026-11-19 08:25:00 - 09:10:00
+- **Action**:
+  - **Phase 1 Preflight Audit & Database Migration**:
+    - Inspected `Classroom`, `ClassroomMember`, `Assignment`, and `ExamAttempt` models and database schema.
+    - Executed non-destructive migration script `scripts/migrate_phase5.py`:
+      - `classrooms`: added `status` (ACTIVE/ARCHIVED), `is_archived`, `max_students` (default 50).
+      - `classroom_members`: added `uq_classroom_member` unique constraint on `(classroom_id, student_id)`.
+      - `assignments`: added `description`, `open_date`, `max_attempts`, `allow_late_submission`, `allow_review`, `status` (DRAFT/PUBLISHED/CANCELLED/CLOSED), `is_published`.
+      - `exam_attempts`: added `assignment_id` foreign key and index `ix_exam_attempts_assignment_id`.
+  - **Phase 2 & 3 Data Model, Service & API Implementation**:
+    - Created [backend/app/modules/classrooms/schemas.py](file:///E:/SMART-LEARNING-PRO/backend/app/modules/classrooms/schemas.py): Pydantic v2 schemas for Classroom CRUD, invite code join, member rosters, classroom statistics, Assignment CRUD, and Gradebook submissions.
+    - Created [backend/app/modules/classrooms/service.py](file:///E:/SMART-LEARNING-PRO/backend/app/modules/classrooms/service.py):
+      - Classroom management: create with random unpredictable code (`SL-XXXXXX`), regenerate invite code, join with duplicate and capacity validation, member removal, leaving classroom, aggregate classroom statistics.
+      - Homework assignment: link to published exams, configure open date/deadline/max attempts/late policy/review policy, publish/cancel, student start attempt with immutable sanitized snapshot, autosave, submission with auto-grading reuse, gradebook listing.
+    - Created [backend/app/modules/classrooms/router.py](file:///E:/SMART-LEARNING-PRO/backend/app/modules/classrooms/router.py): REST endpoints under `/api/v1/classrooms` and `/api/v1/assignments`.
+    - Registered routers in [backend/app/main.py](file:///E:/SMART-LEARNING-PRO/backend/app/main.py) and added central model registry import.
+  - **Phase 4 & 5 Automated Testing**:
+    - Created [backend/tests/test_classrooms.py](file:///E:/SMART-LEARNING-PRO/backend/tests/test_classrooms.py): 2 suites testing classroom creation, ownership boundary (403), Admin override, code regeneration, joining with code, duplicate prevention (409), capacity limit (403), member listing, leaving, and archive closure.
+    - Created [backend/tests/test_assignments.py](file:///E:/SMART-LEARNING-PRO/backend/tests/test_assignments.py): 2 suites testing assignment lifecycle (DRAFT visibility), student start & answer confidentiality, autosaving, auto-grading submission, idempotency, attempt limit enforcement, and teacher gradebook.
+    - Executed complete backend test suite: **23/23 tests PASSED in 5.46s** (exit code 0).
+  - **Phase 6 Documentation**: Updated `docs/DATABASE_SCHEMA.md`, `docs/API_SPECIFICATION.md`, `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, `CHANGELOG.md`.

@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.core.database import init_db, AsyncSessionLocal
+import app.models  # Ensure all SQLAlchemy ORM models are registered in Base
 from app.core.security import hash_password
 from app.core.exceptions import EntityNotFoundException, PermissionDeniedException, DuplicateEntityException, InvalidCredentialsException
 from app.modules.auth.models import User, UserRole
@@ -13,6 +14,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.curriculum.router import router as curriculum_router
 from app.modules.questions.router import router as questions_router
 from app.modules.exams.router import router as exams_router
+from app.modules.classrooms.router import classrooms_router, assignments_router
 from sqlalchemy import select
 
 # Configure logging
@@ -77,6 +79,8 @@ app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 app.include_router(curriculum_router, prefix=settings.API_V1_PREFIX)
 app.include_router(questions_router, prefix=settings.API_V1_PREFIX)
 app.include_router(exams_router, prefix=settings.API_V1_PREFIX)
+app.include_router(classrooms_router, prefix=settings.API_V1_PREFIX)
+app.include_router(assignments_router, prefix=settings.API_V1_PREFIX)
 
 
 # Health Check Endpoint

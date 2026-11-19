@@ -82,8 +82,10 @@ class ExamAttempt(Base, TimestampMixin):
     maximum_score: Mapped[float] = mapped_column(Float, default=10.0)
     time_spent_seconds: Mapped[int] = mapped_column(Integer, default=0)
     questions_snapshot_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Immutable questions snapshot
+    assignment_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("assignments.id", ondelete="SET NULL"), nullable=True, index=True)
 
     exam: Mapped["Exam"] = relationship("Exam", back_populates="attempts")
+    assignment = relationship("Assignment", back_populates="attempts")
     student = relationship("app.modules.auth.models.User")
     answers: Mapped[List["StudentAnswer"]] = relationship("StudentAnswer", back_populates="attempt", cascade="all, delete-orphan")
     result: Mapped[Optional["ExamResult"]] = relationship("ExamResult", back_populates="attempt", uselist=False, cascade="all, delete-orphan")

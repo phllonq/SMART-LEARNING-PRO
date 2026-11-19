@@ -6,7 +6,7 @@ from app.modules.auth.models import User, UserSession, UserRole
 from app.modules.curriculum.models import Grade, Subject, Chapter, Topic, Lesson, LearningMaterial
 from app.modules.questions.models import Question, QuestionOption, QuestionType, DifficultyLevel
 from app.modules.exams.models import Exam, ExamQuestion, ExamAttempt, StudentAnswer, ExamResult, AttemptStatus, ExamStatus
-from app.modules.classrooms.models import Classroom, ClassroomMember, Assignment
+from app.modules.classrooms.models import Classroom, ClassroomMember, Assignment, ClassroomStatus, AssignmentStatus
 from app.modules.analytics.models import TopicMastery, KnowledgeGap, GapSeverity
 from app.modules.ai_tutor.models import AIConversation, AIMessage, AIUsageLog, KnowledgeDocument
 from app.modules.gamification.models import Notification, AuditLog
@@ -33,8 +33,10 @@ __all__ = [
     "ExamResult",
     "AttemptStatus",
     "Classroom",
+    "ClassroomStatus",
     "ClassroomMember",
     "Assignment",
+    "AssignmentStatus",
     "TopicMastery",
     "KnowledgeGap",
     "GapSeverity",

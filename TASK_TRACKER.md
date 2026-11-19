@@ -47,10 +47,13 @@
 - [x] Examination Automated Tests (2 comprehensive test suites, 100% pass)
 
 ## Phase 5: Teacher & Admin Portals
-- [x] Classroom & Assignment models seeded
-- [ ] Classroom & Assignment API Routers (`/api/v1/classrooms/*`)
+- [x] Classroom & Assignment models seeded & evolved with migration
+- [x] Classroom API Router (`/api/v1/classrooms/*` - CRUD, invite code generation/regeneration, join with capacity check, leave, member management, statistics)
+- [x] Assignment API Router (`/api/v1/classrooms/{id}/assignments`, `/api/v1/assignments/*` - Homework creation from exams, open/due dates, max attempts, late policy, review policy, publish/cancel)
+- [x] Student Assignment Workflow (start, autosave, submission, auto-grading, review policy)
+- [x] Teacher Gradebook & Submissions Review (`/api/v1/assignments/{id}/submissions`)
+- [x] Automated Tests for Classrooms & Assignments (4 comprehensive test suites, 100% pass)
 - [ ] Admin User Management & Curriculum Admin Routers
-- [ ] Teacher Gradebook & Analytics Routers
 
 ## Phase 6: AI Engine & Gemini Integration
 - [x] AI models (Conversations, Messages, Usage Logs, Knowledge Chunks) created

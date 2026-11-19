@@ -4,11 +4,10 @@
 - **Product Name**: SMART LEARNING PRO
 - **Location**: `E:\SMART-LEARNING-PRO`
 - **Target Audience**: Middle & High School Students (THCS & THPT) in Vietnam, Teachers, and School Administrators.
-- **Current Phase**: PHASE 4 — Learning Modules:
-  - **Curriculum Module**: **100% COMPLETED**
-  - **Question Bank Module**: **100% COMPLETED**
-  - **Examination Engine & Autosave Grading**: **100% COMPLETED** (19/19 Automated Tests PASSING in 2.91s).
-  - Next: Phase 5 (Classrooms & Assignments) or Phase 6 (AI Engine & Diagnostics).
+- **Current Phase**: PHASE 5 — Teacher & Admin Portals:
+  - **Classroom Management & Membership**: **100% COMPLETED**
+  - **Homework & Assignment Engine**: **100% COMPLETED** (23/23 Automated Tests PASSING in 5.46s).
+  - Next: Phase 6 (AI Engine & Diagnostics with Google Gemini).
 - **Overall Status**: VERIFIED, SECURE & PRODUCTION QUALITY
 
 ---
@@ -17,17 +16,16 @@
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| **Git integrity** | **PASS** | Commits `3cac958`, `a329d5c`, `f7e6945`, `94c137e` verified on `master`. Clean working tree. |
-| **Existing backend tests** | **PASS** | Health, Authentication, RBAC, Curriculum, Questions, and Exams test suites passing 100%. |
-| **Database integrity** | **PASS** | `database/smart_learning.db` verified: 26 tables, foreign keys active, schema updated with exam columns. |
+| **Git integrity** | **PASS** | Commits `3cac958`, `a329d5c`, `f7e6945`, `94c137e`, `1431e65` verified on `master`. Clean working tree. |
+| **Existing backend tests** | **PASS** | Health, Authentication, RBAC, Curriculum, Questions, Exams, Classrooms, and Assignments test suites passing 100%. |
+| **Database integrity** | **PASS** | `database/smart_learning.db` verified: 26 tables, foreign keys active, schema updated with classroom & assignment columns and unique constraint. |
 | **Health endpoint** | **PASS** | `GET /api/v1/health` returns status 200 OK (`status: healthy`). |
 | **Authentication** | **PASS** | Login & Profile retrieval verified for all seeded accounts (Admin, Teacher, Student). |
-| **RBAC & Ownership** | **PASS** | 4-tier role enforcement tested. Teacher ownership boundaries enforced across questions and exams (403 on editing another teacher's exam). Admin override verified. |
-| **Answer Confidentiality** | **PASS** | Verified that students & anonymous users NEVER receive `is_correct` flags or solution leaks via question endpoints or active exam attempts (`questions_snapshot_json`). |
-| **Curriculum API** | **PASS** | 11 endpoints implemented with pagination, KaTeX markdown, and publication filtering. |
-| **Question Bank API** | **PASS** | Complete CRUD, search, filter (grade, subject, chapter, topic, lesson, difficulty, type), toggle-publish, and KaTeX math formulas. |
-| **Examination Engine** | **PASS** | Full exam lifecycle: Teacher draft/publish/archive, add/remove questions, student take exam, autosave debounce, server-side auto-grading, and instant results with detailed review. |
-| **Automated tests** | **PASS** | **19/19 tests passing (100% PASS)** in 2.91s (exit code 0). |
+| **RBAC & Ownership** | **PASS** | 4-tier role enforcement tested. Teacher ownership boundaries enforced across classrooms and assignments (403 on editing another teacher's classroom/assignment). Admin override verified. |
+| **Answer Confidentiality** | **PASS** | Verified that students & anonymous users NEVER receive `is_correct` flags or solution leaks via question endpoints, exam attempts, or assignment snapshots. |
+| **Classroom API** | **PASS** | Complete CRUD, unpredictable invite codes (`SL-XXXXXX`), membership join/leave, capacity limit, archive closure, and classroom statistics. |
+| **Assignment Engine** | **PASS** | Create homework from published exams, configure open/due dates, max attempts, late submission policy, review policy, and gradebook submissions. |
+| **Automated tests** | **PASS** | **23/23 tests passing (100% PASS)** in 5.46s (exit code 0). |
 | **Documentation** | **PASS** | `DATABASE_SCHEMA.md`, `API_SPECIFICATION.md`, `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, `CHANGELOG.md` updated. |
 
 ---
@@ -41,9 +39,9 @@
 | Phase 2 | Design System & UI Foundation | **IN PROGRESS** | 15% | Design Tokens, layout specifications in architecture docs |
 | Phase 3 | Core Foundation (Backend, Auth, RBAC, DB) | **PASS** | 100% | FastAPI app, Argon2, JWT, Dependencies, 26 Models, Health Check, Seeder, Pytest 3/3 |
 | Phase 4 | Learning Modules (Curriculum, Questions, Exams) | **PASS** | 100% | **Curriculum, Question Bank, Examination Engine 100% COMPLETE** (API, RBAC, KaTeX, Autosave, Grading, 19 tests). |
-| Phase 5 | Teacher & Admin Portals | PENDING | 0% | Classrooms, Assignment Management, Gradebook |
+| Phase 5 | Teacher & Admin Portals (Classrooms & Assignments) | **PASS** | 100% | **Classroom & Homework Assignment Engine 100% COMPLETE** (API, RBAC, Capacity, Gradebook, 23 tests). |
 | Phase 6 | AI Engine (Gemini API & Tutor) | PENDING | 0% | Wrong Answer Diagnostics, Socratic Chat, RAG |
 | Phase 7 | Intelligent Learning & Mastery | PENDING | 0% | Gap Detection, Spaced Repetition, Adaptive Practice |
 | Phase 8 | Gamification & UX Refinement | PENDING | 0% | Daily quests, Streak, XP, Level, Badges |
-| Phase 9 | Testing & Quality Assurance | **IN PROGRESS** | 80% | 19/19 automated tests passing (Auth, Health, RBAC, Curriculum, Questions, Exams) |
+| Phase 9 | Testing & Quality Assurance | **IN PROGRESS** | 90% | 23/23 automated tests passing (Auth, Health, RBAC, Curriculum, Questions, Exams, Classrooms, Assignments) |
 | Phase 10 | Docker, Deployment & Final Release | PENDING | 0% | docker-compose template, local SQLite active |

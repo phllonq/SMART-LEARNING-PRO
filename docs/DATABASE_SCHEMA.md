@@ -221,24 +221,37 @@ erDiagram
     - `id`: VARCHAR(36), PK
     - `teacher_id`: VARCHAR(36), FK -> `users.id`, ON DELETE CASCADE
     - `name`: VARCHAR(150), NOT NULL (ví dụ: "Lớp 11A1 - THPT Chuyên")
-    - `code`: VARCHAR(12), UNIQUE, NOT NULL (Mã lớp mời học sinh)
+    - `code`: VARCHAR(12), UNIQUE, NOT NULL (Mã lớp mời học sinh ngẫu nhiên, ví dụ: 'SL-9A7K2X')
     - `grade_id`: INTEGER, FK -> `grades.id`
     - `description`: TEXT
+    - `status`: VARCHAR(20), DEFAULT 'ACTIVE' (ACTIVE, ARCHIVED)
+    - `is_archived`: BOOLEAN, DEFAULT FALSE
+    - `max_students`: INTEGER, DEFAULT 50 (Giới hạn sĩ số tối đa của lớp)
     - `created_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
+    - `updated_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
 
 17. **`classroom_members`**:
     - `id`: VARCHAR(36), PK
     - `classroom_id`: VARCHAR(36), FK -> `classrooms.id`, ON DELETE CASCADE
     - `student_id`: VARCHAR(36), FK -> `users.id`, ON DELETE CASCADE
     - `joined_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
+    - **Constraint**: `UNIQUE(classroom_id, student_id)` — Ngăn chặn trùng lặp thành viên.
 
 18. **`assignments`**:
     - `id`: VARCHAR(36), PK
     - `classroom_id`: VARCHAR(36), FK -> `classrooms.id`, ON DELETE CASCADE
     - `exam_id`: VARCHAR(36), FK -> `exams.id`, ON DELETE CASCADE
     - `title`: VARCHAR(255), NOT NULL
-    - `due_date`: TIMESTAMP WITH TIME ZONE, NOT NULL
+    - `description`: TEXT, NULL (Hướng dẫn làm bài tập)
+    - `open_date`: TIMESTAMP WITH TIME ZONE, NULL (Thời điểm mở bài tập)
+    - `due_date`: TIMESTAMP WITH TIME ZONE, NOT NULL (Hạn chót nộp bài tập)
+    - `max_attempts`: INTEGER, DEFAULT 1 (Số lượt làm bài cho phép)
+    - `allow_late_submission`: BOOLEAN, DEFAULT FALSE (Cho phép nộp muộn)
+    - `allow_review`: BOOLEAN, DEFAULT TRUE (Cho phép xem lại đáp án sau khi nộp)
+    - `status`: VARCHAR(20), DEFAULT 'DRAFT' (DRAFT, PUBLISHED, CANCELLED, CLOSED)
+    - `is_published`: BOOLEAN, DEFAULT FALSE
     - `created_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
+    - `updated_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
 
 ### 2.5. Nhóm Năng Lực Học Tập & Đề Xuất (Mastery & Analytics)
 19. **`topic_mastery`**:

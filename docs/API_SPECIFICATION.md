@@ -387,7 +387,46 @@ Tất cả các endpoint chương trình học đều hỗ trợ kiểm soát ph
 
 ---
 
-## 4. GIA SƯ AI & PHÂN TÍCH LỖI SAI (AI TUTOR ENGINE)
+## 5. QUẢN LÝ LỚP HỌC & BÀI TẬP VỀ NHÀ (CLASSROOMS & HOMEWORK ASSIGNMENTS)
+
+### 5.1. Quản Lý Lớp Học (`/api/v1/classrooms/*`)
+- **`GET /api/v1/classrooms`**: Danh sách lớp học liên quan đến người dùng hiện tại (Giáo viên: các lớp do mình phụ trách; Học sinh: các lớp đã tham gia; Admin: toàn bộ lớp học trên hệ thống).
+- **`POST /api/v1/classrooms`**: Tạo lớp học mới (Giáo viên / Admin). Hệ thống tự sinh mã mời ngẫu nhiên (`SL-XXXXXX`), thiết lập sĩ số tối đa `max_students`.
+- **`GET /api/v1/classrooms/{classroom_id}`**: Chi tiết lớp học và danh sách thành viên (chỉ dành cho Giáo viên chủ nhiệm, Admin hoặc Học sinh đã tham gia lớp).
+- **`PATCH /api/v1/classrooms/{classroom_id}`**: Cập nhật thông tin lớp học (tên, mô tả, khối lớp, sĩ số tối đa).
+- **`POST /api/v1/classrooms/{classroom_id}/archive`**: Lưu trữ lớp học (Đóng lớp, không cho phép học sinh mới tham gia).
+- **`POST /api/v1/classrooms/{classroom_id}/regenerate-invite-code`**: Cấp lại mã mời mới cho lớp học.
+- **`GET /api/v1/classrooms/{classroom_id}/members`**: Danh sách học sinh trong lớp (họ tên, email, ảnh đại diện, ngày tham gia).
+- **`POST /api/v1/classrooms/join`**: Học sinh tham gia lớp học qua mã mời. Kiểm tra tự động lớp có bị lưu trữ không, chống trùng lặp thành viên (`409 Conflict`), kiểm tra giới hạn sĩ số tối đa (`403 Forbidden`).
+- **`DELETE /api/v1/classrooms/{classroom_id}/members/{student_id}`**: Xóa học sinh ra khỏi lớp học (Giáo viên chủ nhiệm hoặc Admin).
+- **`POST /api/v1/classrooms/{classroom_id}/leave`**: Học sinh tự rời khỏi lớp học.
+- **`GET /api/v1/classrooms/{classroom_id}/statistics`**: Thống kê hiệu suất lớp học (tổng số học sinh, số bài tập đã giao, số lượt nộp bài, điểm trung bình toàn lớp, tỷ lệ hoàn thành bài tập).
+
+---
+
+### 5.2. Quản Lý Bài Tập Về Nhà (`/api/v1/assignments/*` & `/classrooms/{id}/assignments`)
+- **`GET /api/v1/classrooms/{classroom_id}/assignments`**: Danh sách bài tập trong lớp (Giáo viên xem được tất cả các bài DRAFT/PUBLISHED/CANCELLED; Học sinh chỉ thấy các bài đã PUBLISHED).
+- **`POST /api/v1/classrooms/{classroom_id}/assignments`**: Giao bài tập về nhà từ một đề thi đã xuất bản trong Ngân hàng đề thi (`exam_id`). Cấu hình hạn chót (`due_date`), thời điểm mở (`open_date`), số lần làm bài tối đa (`max_attempts`), chính sách nộp muộn (`allow_late_submission`) và chính sách xem lời giải sau khi nộp (`allow_review`).
+- **`GET /api/v1/assignments/{assignment_id}`**: Xem chi tiết bài tập (Học sinh ngoài lớp bị chặn `403 Forbidden`).
+- **`PATCH /api/v1/assignments/{assignment_id}`**: Cập nhật thông số bài tập (Giáo viên chủ nhiệm hoặc Admin).
+- **`POST /api/v1/assignments/{assignment_id}/publish`**: Xuất bản bài tập để học sinh trong lớp bắt đầu làm bài.
+- **`POST /api/v1/assignments/{assignment_id}/cancel`**: Hủy bài tập.
+- **`GET /api/v1/assignments/{assignment_id}/submissions`**: Bảng tổng hợp điểm số (Gradebook) của toàn bộ học sinh trong lớp (trạng thái: NOT_STARTED, IN_PROGRESS, SUBMITTED, điểm số, thời gian nộp bài, tỷ lệ đạt).
+
+### 5.3. Quy Trình Học Sinh Làm Bài Tập
+- **`POST /api/v1/assignments/{assignment_id}/start`**: Bắt đầu hoặc tiếp tục bài tập đang làm dở.
+  - Kiểm tra điều kiện: Phải là thành viên lớp học, bài tập đang mở, chưa quá hạn (nếu không cho nộp muộn), chưa vượt quá số lượt làm bài cho phép (`max_attempts`).
+  - Bảo mật: Trả về snapshot câu hỏi **không chứa đáp án đúng**.
+- **`PUT /api/v1/exams/attempts/{attempt_id}/answers/{question_id}`**: Tự động lưu đáp án câu hỏi (Autosave real-time).
+- **`GET /api/v1/assignments/{assignment_id}/my-attempt`**: Xem trạng thái và các câu trả lời đã lưu của học sinh.
+- **`POST /api/v1/assignments/{assignment_id}/submit`**: Nộp bài tập.
+  - Tự động kích hoạt Server-side Auto-Grading Engine để tính điểm.
+  - Xử lý nộp bài trùng lặp (Idempotent): Trả về kết quả đã chấm mà không nhân đôi bản ghi.
+  - Tôn trọng chính sách `allow_review` của bài tập.
+
+---
+
+## 6. GIA SƯ AI & PHÂN TÍCH LỖI SAI (AI TUTOR ENGINE)
 
 ### `POST /api/v1/ai/analyze-wrong-answer`
 - **Mục đích**: Phân tích chuyên sâu một câu hỏi học sinh làm sai bằng Gemini AI.

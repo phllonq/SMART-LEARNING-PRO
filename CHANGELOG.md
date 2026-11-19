@@ -1,5 +1,36 @@
 # CHANGELOG — SMART LEARNING PRO
 
+## [0.6.0] - 2026-11-19
+### Added
+- **Classroom Management Module (`/api/v1/classrooms/*`)**:
+  - `GET /classrooms`: Danh sách lớp học theo phân quyền (Giáo viên xem các lớp do mình sở hữu, Học sinh xem các lớp đã tham gia, Admin xem toàn bộ hệ thống).
+  - `POST /classrooms`: Tạo lớp học mới, tự động sinh mã mời ngẫu nhiên (`SL-XXXXXX`), thiết lập sĩ số tối đa (`max_students`).
+  - `GET /classrooms/{classroom_id}`: Xem chi tiết lớp học và danh sách thành viên (kiểm tra phân quyền nghiêm ngặt).
+  - `PATCH /classrooms/{classroom_id}`: Cập nhật thông tin lớp học (tên, mô tả, khối lớp, sĩ số tối đa).
+  - `POST /classrooms/{classroom_id}/archive`: Lưu trữ lớp học, chặn toàn bộ yêu cầu tham gia mới.
+  - `POST /classrooms/{classroom_id}/regenerate-invite-code`: Cấp lại mã mời mới an toàn.
+  - `GET /classrooms/{classroom_id}/members`: Danh sách thành viên trong lớp kèm thông tin học sinh.
+  - `POST /classrooms/join`: Học sinh tham gia lớp học qua mã mời với kiểm tra trùng lặp (`409 Conflict`), kiểm tra trạng thái lưu trữ (`403 Forbidden`) và kiểm tra sĩ số tối đa (`403 Forbidden`).
+  - `DELETE /classrooms/{classroom_id}/members/{student_id}`: Giáo viên gỡ học sinh khỏi lớp học.
+  - `POST /classrooms/{classroom_id}/leave`: Học sinh tự rời khỏi lớp học.
+  - `GET /classrooms/{classroom_id}/statistics`: Báo cáo thống kê hiệu suất lớp học (tổng sĩ số, số bài tập, số bài nộp, điểm trung bình toàn lớp, tỷ lệ hoàn thành).
+- **Homework Assignment Engine (`/api/v1/assignments/*` & `/classrooms/{id}/assignments`)**:
+  - `GET /classrooms/{classroom_id}/assignments`: Danh sách bài tập (Học sinh chỉ thấy các bài tập đã xuất bản; Giáo viên thấy toàn bộ các trạng thái DRAFT/PUBLISHED/CANCELLED).
+  - `POST /classrooms/{classroom_id}/assignments`: Giao bài tập về nhà từ đề thi có sẵn trong Ngân hàng đề thi, cấu hình hạn nộp (`due_date`), thời điểm mở (`open_date`), số lần làm bài (`max_attempts`), chính sách nộp muộn (`allow_late_submission`) và chính sách xem đáp án (`allow_review`).
+  - `GET /assignments/{assignment_id}`: Chi tiết bài tập (chặn 403 nếu học sinh không thuộc lớp học).
+  - `PATCH /assignments/{assignment_id}`: Chỉnh sửa thông số bài tập.
+  - `POST /assignments/{assignment_id}/publish`: Xuất bản bài tập để học sinh bắt đầu làm bài.
+  - `POST /assignments/{assignment_id}/cancel`: Hủy bài tập.
+  - `GET /assignments/{assignment_id}/submissions`: Bảng điểm lớp học (Gradebook) chi tiết từng học sinh kèm trạng thái làm bài, điểm số, thời gian nộp và tỷ lệ đạt.
+- **Quy trình học sinh làm bài tập**:
+  - `POST /assignments/{assignment_id}/start`: Bắt đầu hoặc tiếp tục bài tập dở dang, trả về snapshot câu hỏi không chứa đáp án đúng.
+  - Tái sử dụng engine autosave và auto-grading của Examination Engine không trùng lặp code.
+  - `GET /assignments/{assignment_id}/my-attempt`: Xem lại các đáp án đã lưu trước đó khi tải lại trang.
+  - `POST /assignments/{assignment_id}/submit`: Nộp bài tập, tự động chấm điểm, tính điểm số, tỷ lệ chính xác, và xử lý nộp bài trùng lặp an toàn (idempotent).
+- **Bộ kiểm thử tự động chuyên sâu**:
+  - Tạo `backend/tests/test_classrooms.py` và `backend/tests/test_assignments.py` với 4 test suites bao quát 100% yêu cầu.
+  - Toàn bộ backend test suite đạt **23/23 tests PASS (100%)** trong 5.46 giây.
+
 ## [0.5.0] - 2026-11-19
 ### Added
 - **Online Examination Engine & Auto-Grading (`/api/v1/exams/*`)**:

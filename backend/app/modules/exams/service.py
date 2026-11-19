@@ -307,13 +307,21 @@ async def get_available_exams_for_student(db: AsyncSession, student: User) -> Li
     return available
 
 
-async def start_exam_attempt(db: AsyncSession, exam_id: str, student: User) -> Tuple[ExamAttempt, List[Dict[str, Any]]]:
+async def start_exam_attempt(
+    db: AsyncSession,
+    exam_id: str,
+    student: User,
+    assignment_id: Optional[str] = None,
+    max_attempts_override: Optional[int] = None,
+    deadline_override: Optional[datetime] = None
+) -> Tuple[ExamAttempt, List[Dict[str, Any]]]:
     """
     Start or resume an examination attempt:
     - Verifies eligibility, scheduling window, attempt limit.
     - Prevents duplicate active attempts.
     - Creates immutable questions snapshot decoupled from future Question Bank edits.
     - Strictly sanitizes questions snapshot without answer keys for the student.
+    - Reusable for Homework Assignments via assignment_id.
     """
     now = datetime.now(timezone.utc)
     exam = await get_exam_by_id(db, exam_id, user=student)
@@ -321,24 +329,31 @@ async def start_exam_attempt(db: AsyncSession, exam_id: str, student: User) -> T
     if exam.status != ExamStatus.PUBLISHED.value or not exam.is_published:
         raise PermissionDeniedException("Đề thi này chưa được công bố hoặc đã lưu trữ.")
 
-    if ex_start := ensure_utc(exam.start_time):
-        if ex_start > now:
-            raise PermissionDeniedException(f"Đề thi chưa đến giờ mở (Mở lúc: {exam.start_time}).")
-    if ex_end := ensure_utc(exam.end_time):
-        if ex_end < now:
-            raise PermissionDeniedException("Đề thi đã hết hạn tham gia.")
+    if not assignment_id:
+        if ex_start := ensure_utc(exam.start_time):
+            if ex_start > now:
+                raise PermissionDeniedException(f"Đề thi chưa đến giờ mở (Mở lúc: {exam.start_time}).")
+        if ex_end := ensure_utc(exam.end_time):
+            if ex_end < now:
+                raise PermissionDeniedException("Đề thi đã hết hạn tham gia.")
 
     if not exam.exam_questions:
         raise PermissionDeniedException("Đề thi chưa có câu hỏi nào.")
 
     # 1. Check if there is an existing active IN_PROGRESS attempt
+    active_conditions = [
+        ExamAttempt.exam_id == exam_id,
+        ExamAttempt.student_id == student.id,
+        ExamAttempt.status == AttemptStatus.IN_PROGRESS.value
+    ]
+    if assignment_id:
+        active_conditions.append(ExamAttempt.assignment_id == assignment_id)
+    else:
+        active_conditions.append(ExamAttempt.assignment_id.is_(None))
+
     active_query = (
         select(ExamAttempt)
-        .where(
-            ExamAttempt.exam_id == exam_id,
-            ExamAttempt.student_id == student.id,
-            ExamAttempt.status == AttemptStatus.IN_PROGRESS.value
-        )
+        .where(and_(*active_conditions))
         .options(selectinload(ExamAttempt.exam))
     )
     active_res = await db.execute(active_query)
@@ -356,18 +371,31 @@ async def start_exam_attempt(db: AsyncSession, exam_id: str, student: User) -> T
             return existing_attempt, snapshot
 
     # 2. Check attempt limits
-    completed_query = select(func.count(ExamAttempt.id)).where(
+    completed_conditions = [
         ExamAttempt.exam_id == exam_id,
         ExamAttempt.student_id == student.id,
         ExamAttempt.status.in_([AttemptStatus.SUBMITTED.value, AttemptStatus.AUTO_SUBMITTED.value, AttemptStatus.GRADED.value])
-    )
+    ]
+    if assignment_id:
+        completed_conditions.append(ExamAttempt.assignment_id == assignment_id)
+    else:
+        completed_conditions.append(ExamAttempt.assignment_id.is_(None))
+
+    completed_query = select(func.count(ExamAttempt.id)).where(and_(*completed_conditions))
     completed_count = (await db.execute(completed_query)).scalar_one()
-    if completed_count >= exam.max_attempts:
-        raise PermissionDeniedException(f"Bạn đã dùng hết số lượt thi cho phép ({completed_count}/{exam.max_attempts}).")
+
+    max_allowed = max_attempts_override if max_attempts_override is not None else exam.max_attempts
+    if completed_count >= max_allowed:
+        raise PermissionDeniedException(f"Bạn đã dùng hết số lượt làm bài cho phép ({completed_count}/{max_allowed}).")
 
     # 3. Create fresh attempt
     started_at = now
-    deadline_at = started_at + timedelta(minutes=exam.duration_minutes)
+    calc_deadline = started_at + timedelta(minutes=exam.duration_minutes)
+    if deadline_override:
+        dl_utc = ensure_utc(deadline_override)
+        deadline_at = min(calc_deadline, dl_utc) if dl_utc else calc_deadline
+    else:
+        deadline_at = calc_deadline
 
     # 4. Generate Immutable Snapshot
     eq_list = list(exam.exam_questions)
@@ -419,6 +447,7 @@ async def start_exam_attempt(db: AsyncSession, exam_id: str, student: User) -> T
 
     attempt = ExamAttempt(
         exam_id=exam.id,
+        assignment_id=assignment_id,
         student_id=student.id,
         attempt_number=completed_count + 1,
         status=AttemptStatus.IN_PROGRESS.value,
