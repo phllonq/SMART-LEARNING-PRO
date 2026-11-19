@@ -3,6 +3,7 @@ import {
   AssignmentCreate,
   AssignmentSubmissionsResponse,
   AssignmentSummary,
+  ExamStartResponse,
 } from "@/types";
 
 export const assignmentsApi = {
@@ -40,7 +41,7 @@ export const assignmentsApi = {
     );
   },
 
-  async startAssignment(id: string): Promise<unknown> {
-    return apiClient.post(`/assignments/${id}/start`);
+  async startAssignment(id: string): Promise<ExamStartResponse> {
+    return apiClient.post<ExamStartResponse>(`/assignments/${id}/start`);
   },
 };

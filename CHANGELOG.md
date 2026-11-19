@@ -1,5 +1,33 @@
 # CHANGELOG — SMART LEARNING PRO
 
+## [0.7.3] - 2026-11-19
+### Added & Verified - Phase 6.3: Student Exam Interface Implementation
+- **Giao diện Phòng Thi Học Sinh & Làm Bài Trực Tuyến**:
+  - Xây dựng tuyến đường Quy định & Khởi tạo Đề thi: `frontend/src/app/student/exams/[id]/page.tsx` hiển thị chi tiết đề thi (thời lượng, số câu, điểm đạt, quy định) và khởi tạo attempt.
+  - Cập nhật sảnh luyện thi `frontend/src/app/student/exams/page.tsx`: Nút "Bắt đầu làm bài" điều hướng mượt mà sang trang chi tiết đề thi.
+  - Xây dựng Phòng thi trực tuyến và Màn hình kết quả: `frontend/src/app/student/exams/attempts/[attemptId]/page.tsx`.
+    - Thanh điều hướng đỉnh cố định (Sticky Topbar) với tiến độ câu hỏi, lượt thi, trạng thái lưu và nút nộp bài.
+    - Ma trận câu hỏi (Question Matrix) hỗ trợ điều hướng nhanh với 4 trạng thái (đã làm, chưa làm, đang xem, gắn cờ).
+    - Hỗ trợ đầy đủ các dạng câu hỏi: Chọn 1 đáp án (Single-choice), Chọn nhiều đáp án (Multiple-choice), Đúng/Sai (True/False), và Câu trả lời ngắn (Short-answer).
+    - Kết xuất ký hiệu và công thức toán học GDPT 2018 bằng `MathKaTeX`.
+    - Cơ chế tự động lưu phía máy chủ (Debounced Autosave) với hiển thị trạng thái trung thực (`SAVING`, `SAVED`, `ERROR` kèm nút thử lại).
+    - Đồng hồ đếm ngược có thẩm quyền phía máy chủ (Authoritative Server Timer) chuẩn hóa múi giờ (`parseServerDate`), tự động kích hoạt nộp bài khi hết giờ.
+    - Hộp thoại xác nhận nộp bài hiển thị thống kê câu hỏi đã trả lời/chưa trả lời và cảnh báo nổi bật.
+    - Màn hình kết quả hiển thị điểm số máy chủ, tỷ lệ chính xác, số câu đúng/sai/bỏ qua, và xem lại đáp án chi tiết khi được phép.
+    - Giao diện bảo mật chống IDOR với thẻ cảnh báo HTTP 403 khi học sinh truy cập attempt của học sinh khác.
+  - Tích hợp giao diện làm bài tập về nhà `frontend/src/app/student/assignments/page.tsx` kết nối trực tiếp với attempt làm bài thi.
+- **Mở rộng API Service & Types**:
+  - Bổ sung các kiểu dữ liệu thi cử trong `frontend/src/types/index.ts`.
+  - Mở rộng `frontend/src/lib/api/exams.ts` với các phương thức `startExam`, `getAttempt`, `autosaveAnswer`, `submitAttempt`, `getAttemptReview`.
+- **Kiểm thử Tự động E2E & Tiêu chuẩn Chất lượng**:
+  - Mở rộng `frontend/e2e/exam-lifecycle.spec.ts` với đầy đủ 16 kịch bản kiểm thử tự động trên Google Chrome thực tế và live FastAPI backend.
+  - Bộ kiểm thử Playwright E2E: **36/36 tests PASS trong 15.3s (Exit Code 0)**.
+  - Bộ kiểm thử Pytest Backend: **31/31 tests PASS trong 6.52s (Exit Code 0)**.
+  - TypeScript Check: **0 errors**.
+  - ESLint Linting: **0 errors, 0 warnings**.
+  - Next.js Production Build: **23/23 routes compiled thành công**.
+- **Báo cáo Kỹ thuật**: Tạo [docs/PHASE_6_3_STUDENT_EXAM_INTERFACE.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_3_STUDENT_EXAM_INTERFACE.md).
+
 ## [0.7.2] - 2026-11-19
 ### Verified & Tested - Phase 6.2: Critical Workflow & Security Verification
 - **Kiểm thử Tự động hóa E2E Nghiệp vụ Thi & Chấm điểm (Stage A)**:

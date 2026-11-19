@@ -234,6 +234,98 @@ export interface PaginatedResponse<T> {
   total_pages: number;
 }
 
+export interface ExamAttemptQuestionOption {
+  id: string;
+  option_key: string;
+  content: string;
+  order_index: number;
+}
+
+export interface ExamAttemptQuestion {
+  question_id: string;
+  order_index: number;
+  points: number;
+  content: string;
+  question_type: string;
+  difficulty_level: string;
+  hint?: string | null;
+  options: ExamAttemptQuestionOption[];
+}
+
+export interface ExamStartResponse {
+  attempt_id: string;
+  exam_id: string;
+  attempt_number: number;
+  started_at: string;
+  deadline_at: string;
+  duration_minutes: number;
+  total_questions: number;
+  questions: ExamAttemptQuestion[];
+}
+
+export interface SavedAnswerItem {
+  selected_option_id?: string | null;
+  selected_option_ids?: string[] | null;
+  answer_text?: string | null;
+  is_flagged: boolean;
+  time_spent_seconds: number;
+}
+
+export interface AttemptDetailResponse {
+  attempt_id: string;
+  exam_id: string;
+  attempt_number?: number;
+  status: string;
+  started_at: string;
+  deadline_at: string;
+  time_spent_seconds: number;
+  questions: ExamAttemptQuestion[];
+  saved_answers: Record<string, SavedAnswerItem>;
+}
+
+export interface AutosaveAnswerRequest {
+  selected_option_id?: string | null;
+  selected_option_ids?: string[] | null;
+  answer_text?: string | null;
+  is_flagged?: boolean;
+  time_spent_seconds?: number;
+}
+
+export interface AutosaveAnswerResponse {
+  status: string;
+  attempt_id: string;
+  question_id: string;
+  saved_at: string;
+}
+
+export interface QuestionReviewItem {
+  question_id: string;
+  content: string;
+  is_correct: boolean;
+  points_awarded: number;
+  max_points: number;
+  correct_option_keys: string[];
+  explanation?: string | null;
+}
+
+export interface ExamSubmitResponse {
+  attempt_id: string;
+  exam_id: string;
+  status: string;
+  total_score: number;
+  maximum_score: number;
+  passing_score: number;
+  is_passed: boolean;
+  correct_answers_count: number;
+  wrong_answers_count: number;
+  skipped_answers_count: number;
+  accuracy_percentage: number;
+  feedback_summary?: string | null;
+  submitted_at: string;
+  review_allowed: boolean;
+  question_reviews?: QuestionReviewItem[] | null;
+}
+
 export interface ApiError {
   detail: string | Array<{ msg: string; loc: string[] }>;
 }

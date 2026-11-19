@@ -1,5 +1,14 @@
 import { apiClient } from "./client";
-import { ExamDetail, ExamSummary, PaginatedResponse } from "@/types";
+import {
+  ExamDetail,
+  ExamSummary,
+  PaginatedResponse,
+  ExamStartResponse,
+  AttemptDetailResponse,
+  AutosaveAnswerRequest,
+  AutosaveAnswerResponse,
+  ExamSubmitResponse,
+} from "@/types";
 
 export const examsApi = {
   async getAvailableExams(): Promise<ExamSummary[]> {
@@ -35,5 +44,36 @@ export const examsApi = {
 
   async publishExam(id: string): Promise<ExamSummary> {
     return apiClient.post<ExamSummary>(`/exams/${id}/publish`);
+  },
+
+  async startExam(examId: string): Promise<ExamStartResponse> {
+    return apiClient.post<ExamStartResponse>(`/exams/${examId}/start`);
+  },
+
+  async getAttempt(attemptId: string): Promise<AttemptDetailResponse> {
+    return apiClient.get<AttemptDetailResponse>(`/exams/attempts/${attemptId}`);
+  },
+
+  async autosaveAnswer(
+    attemptId: string,
+    questionId: string,
+    data: AutosaveAnswerRequest
+  ): Promise<AutosaveAnswerResponse> {
+    return apiClient.put<AutosaveAnswerResponse>(
+      `/exams/attempts/${attemptId}/answers/${questionId}`,
+      data
+    );
+  },
+
+  async submitAttempt(attemptId: string): Promise<ExamSubmitResponse> {
+    return apiClient.post<ExamSubmitResponse>(
+      `/exams/attempts/${attemptId}/submit`
+    );
+  },
+
+  async getAttemptReview(attemptId: string): Promise<ExamSubmitResponse> {
+    return apiClient.get<ExamSubmitResponse>(
+      `/exams/attempts/${attemptId}/review`
+    );
   },
 };

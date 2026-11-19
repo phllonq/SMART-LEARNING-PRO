@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { classroomsApi } from "@/lib/api/classrooms";
 import { assignmentsApi } from "@/lib/api/assignments";
@@ -17,12 +18,15 @@ import {
   CheckCircle2,
   Award,
   ArrowRight,
+  Loader2,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { AssignmentSummary } from "@/types";
 
 export default function StudentAssignmentsPage() {
+  const router = useRouter();
   const [now] = useState(() => Date.now());
+  const [startingId, setStartingId] = useState<string | null>(null);
 
   const { data: classrooms = [], isLoading: isLoadingClassrooms } = useQuery({
     queryKey: ["student-classrooms"],
@@ -163,15 +167,34 @@ export default function StudentAssignmentsPage() {
                   <Button
                     size="sm"
                     className="w-full md:w-auto gap-1.5"
-                    disabled={isOverdue && !assignment.allow_late_submission}
-                    onClick={() =>
-                      alert(
-                        `Đang chuẩn bị vào bài làm "${assignment.title}". Thời lượng: ${assignment.duration_minutes} phút.`
-                      )
-                    }
+                    disabled={(isOverdue && !assignment.allow_late_submission) || startingId === assignment.id}
+                    onClick={async () => {
+                      setStartingId(assignment.id);
+                      try {
+                        const res = await assignmentsApi.startAssignment(assignment.id);
+                        router.push(`/student/exams/attempts/${res.attempt_id}`);
+                      } catch (err: unknown) {
+                        setStartingId(null);
+                        const apiErr = err as { response?: { data?: { detail?: string } }; message?: string };
+                        alert(
+                          apiErr.response?.data?.detail ||
+                            apiErr.message ||
+                            "Không thể khởi tạo bài tập."
+                        );
+                      }
+                    }}
                   >
-                    <span>Làm bài ngay</span>
-                    <ArrowRight className="h-4 w-4" />
+                    {startingId === assignment.id ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Đang vào bài...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Làm bài ngay</span>
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
                   </Button>
                 </div>
               </Card>

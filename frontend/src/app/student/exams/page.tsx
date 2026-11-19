@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { examsApi } from "@/lib/api/exams";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -16,19 +17,6 @@ export default function StudentExamsPage() {
     queryKey: ["student-available-exams"],
     queryFn: () => examsApi.getAvailableExams(),
   });
-
-  const handleStartExam = (exam: ExamSummary) => {
-    const ok = confirm(
-      `Bạn chuẩn bị bắt đầu làm bài thi "${exam.title}".\n\n` +
-      `• Thời gian: ${exam.duration_minutes} phút\n` +
-      `• Số câu hỏi: ${exam.question_count || 10} câu\n` +
-      `• Thang điểm: ${exam.total_points || 10.0} đ\n\n` +
-      `Đồng hồ bấm giờ sẽ tự động đếm lùi khi bạn bắt đầu.`
-    );
-    if (ok) {
-      alert(`Đang khởi tạo phiên thi trực tuyến cho đề "${exam.title}"!`);
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -95,13 +83,12 @@ export default function StudentExamsPage() {
                 </div>
 
                 <div className="pt-3 border-t border-slate-100">
-                  <Button
-                    onClick={() => handleStartExam(exam)}
-                    className="w-full gap-2 shadow-sm"
-                  >
-                    <Play className="h-4 w-4 fill-current" />
-                    <span>Bắt đầu làm bài</span>
-                  </Button>
+                  <Link href={`/student/exams/${exam.id}`} className="block w-full">
+                    <Button className="w-full gap-2 shadow-sm">
+                      <Play className="h-4 w-4 fill-current" />
+                      <span>Bắt đầu làm bài</span>
+                    </Button>
+                  </Link>
                 </div>
               </CardContent>
             </Card>
