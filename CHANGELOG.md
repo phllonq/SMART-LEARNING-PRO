@@ -1,5 +1,34 @@
 # CHANGELOG — SMART LEARNING PRO
 
+## [0.7.2] - 2026-11-19
+### Verified & Tested - Phase 6.2: Critical Workflow & Security Verification
+- **Kiểm thử Tự động hóa E2E Nghiệp vụ Thi & Chấm điểm (Stage A)**:
+  - Tạo `frontend/e2e/exam-lifecycle.spec.ts` kiểm chứng toàn diện 11 yêu cầu kỹ thuật:
+    - Mở sảnh đề thi trên giao diện UI (`PASS`).
+    - Ghi nhận trạng thái UI: Giao diện tương tác làm bài thi trực tiếp (`/student/exams/[id]`) là `NOT IMPLEMENTED` trong frontend Phase 6 (nút làm bài thi hiện hiển thị thông báo alert cho học sinh).
+    - Kiểm chứng qua API: Khởi tạo attempt, cơ chế chống lộ đáp án (anti-leak) bảo đảm 100% không có `is_correct` và `explanation` trong snapshot đề thi, lưu câu trả lời thời gian thực (`PUT /answers`), chấm điểm tự động (`POST /submit`), cơ chế lũy thừa khi nộp lại (trả về kết quả đã chấm kèm HTTP 200), và phân quyền xem lại bài thi (`GET /review` trả về 200 cho học sinh sở hữu, 403 Forbidden cho học sinh khác và 403 Forbidden khi attempt chưa nộp).
+- **Kiểm thử Tự động hóa E2E Thao tác Giáo viên & Ranh giới Sở hữu (Stage B)**:
+  - Tạo `frontend/e2e/teacher-mutations.spec.ts` kiểm chứng 10 yêu cầu đột biến dữ liệu:
+    - Tạo lớp học mới, xem danh sách và mở chi tiết lớp trên giao diện UI (`PASS`).
+    - Tạo đề thi mới và xuất bản mở phòng luyện trên giao diện UI (`PASS`).
+    - Thêm câu hỏi vào đề thi qua backend API (`PASS`); ghi nhận giao diện chọn ma trận câu hỏi trên UI là `NOT IMPLEMENTED`.
+    - Tạo bài tập từ đề thi, hủy bài tập có xác nhận modal, và xuất bản bài tập nháp trên giao diện UI (`PASS`).
+    - Kiểm tra sổ điểm bài tập qua API (`PASS`); ghi nhận giao diện bảng điểm chi tiết trên UI là `NOT IMPLEMENTED`.
+    - Ranh giới sở hữu giáo viên: Giáo viên B bị chặn nghiêm ngặt bằng mã `403 Forbidden` khi cố truy cập chi tiết lớp, tạo lại mã mời, sửa đề thi hoặc lưu trữ lớp của Giáo viên A (`PASS`).
+- **Kiểm thử Ma trận Phân quyền Backend (Stage C)**:
+  - Tạo `frontend/e2e/backend-authorization.spec.ts` kiểm thử 21 API endpoints trên 4 vai trò (Student, Teacher B, Admin, Unauthenticated). Toàn bộ 7 suite đạt chuẩn phân quyền.
+- **Kiểm toán Kiến trúc Xác thực & Nguy cơ XSS (Stage D)**:
+  - Trả lời chi tiết 10 câu hỏi an ninh dựa trên bằng chứng mã nguồn (`client.ts`, `auth-context.tsx`, `auth/router.py`, `dependencies.py`, `math-katex.tsx`).
+  - Phân tích rõ: `sessionStorage` giảm thiểu rò rỉ token kéo dài giữa các phiên trình duyệt, nhưng KHÔNG ngăn chặn được việc đánh cắp token nếu xảy ra XSS trong phiên hiện tại.
+  - Phân loại rủi ro: SEC-01 (Medium: Thiếu cơ chế thu hồi refresh token trên máy chủ), SEC-02 (Medium: Token gửi qua header từ storage và thiếu header anti-CSRF tường minh), SEC-03 (Low: Cơ chế hết hạn thụ động), SEC-04 (Low: Bề mặt render KaTeX).
+- **Cổng Tiêu chuẩn Chất lượng Toàn diện (Stage E)**:
+  - TypeScript Strict: **0 errors**.
+  - ESLint: **0 errors, 0 warnings**.
+  - Next.js Production Build: **21/21 routes compiled thành công**.
+  - Backend Pytest Suite: **31/31 tests PASS trong 5.92s**.
+  - Playwright Chrome E2E Suite: **34/34 tests PASS trong 13.4s**.
+- **Báo cáo Chuyên sâu**: Tạo [docs/PHASE_6_2_CRITICAL_VERIFICATION.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_2_CRITICAL_VERIFICATION.md).
+
 ## [0.7.1] - 2026-11-19
 ### Verified & Hardened - Phase 6.1: Frontend Functional Integration & RBAC Audit
 - **Kiểm thử Tự động hóa E2E Playwright trên Google Chrome thực tế**:

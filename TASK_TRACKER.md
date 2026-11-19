@@ -81,6 +81,22 @@
 - [x] Verification of Quality Gates: TypeScript (0 errors), ESLint (0 errors, 0 warnings), Next.js Build (21/21 routes), Backend Pytest (31/31 PASS in 6.70s)
 - [x] Documentation: Created `docs/PHASE_6_1_FUNCTIONAL_AUDIT.md`
 
+## Phase 6.2: Critical Workflow & Security Verification
+- [x] Stage A: Exam Lifecycle E2E — Automated Playwright suite `frontend/e2e/exam-lifecycle.spec.ts` (11 requirements)
+- [x] Exam Anti-Leak Verification: verified zero `is_correct` in question options and zero `explanation` fields during live attempt
+- [x] Exam Autosave & Idempotency: verified server-side autosave persistence, score calculation, and idempotency of multiple submissions
+- [x] Exam Review & IDOR Protection: verified 200 OK for attempt owner, strict 403 Forbidden for unauthorized students and in-progress attempts
+- [x] Noted Phase 6 UI state: Interactive multi-question exam taking view identified as `NOT IMPLEMENTED` in frontend
+- [x] Stage B: Teacher Mutations E2E — Automated Playwright suite `frontend/e2e/teacher-mutations.spec.ts` (10 requirements)
+- [x] Teacher Classroom & Exam Creation: verified UI creation, listing, entering detail view, and publishing exams
+- [x] Teacher Assignment Mutations: verified UI creation, cancellation with confirmation, and publishing draft assignments
+- [x] Teacher Ownership Boundary Isolation: verified HTTP 403 Forbidden for Teacher B attempting mutations or code regeneration on Teacher A's resources
+- [x] Noted Phase 6 UI state: Question matrix picker and detailed assignment gradebook table identified as `NOT IMPLEMENTED` in frontend
+- [x] Stage C: Backend Authorization Matrix — Automated Playwright suite `frontend/e2e/backend-authorization.spec.ts` (21 endpoints tested across 4 roles)
+- [x] Stage D: Authentication & XSS Code Review — In-depth analysis of 10 security questions with code-level evidence; classified risks SEC-01 to SEC-04; documented that `sessionStorage` is not an XSS defense
+- [x] Stage E: Regression & Quality Gates: TypeScript check (0 errors), ESLint (0 errors, 0 warnings), Next.js Build (21/21 routes), Backend Pytest (31/31 PASS in 5.92s), Playwright Chrome E2E (34/34 PASS in 13.4s)
+- [x] Stage F: Comprehensive Audit Report — Created `docs/PHASE_6_2_CRITICAL_VERIFICATION.md`
+
 ## Phase 7: AI Engine (Next Phase)
 - [ ] Gemini API integration for automated question diagnosis
 - [ ] Socratic AI Tutor interactive chat
