@@ -78,6 +78,13 @@ class QuestionCreate(QuestionBase):
             if correct_count != 1:
                 raise ValueError("Câu hỏi Đúng/Sai phải có đúng 1 đáp án đúng.")
 
+        elif q_type == QuestionType.SHORT_ANSWER:
+            if len(opts) < 1:
+                raise ValueError("Câu hỏi trả lời ngắn phải có ít nhất 1 đáp án mẫu được chấp nhận.")
+            correct_count = sum(1 for o in opts if o.is_correct)
+            if correct_count < 1:
+                raise ValueError("Câu hỏi trả lời ngắn phải có ít nhất 1 đáp án mẫu được đánh dấu là đúng.")
+
         return self
 
 

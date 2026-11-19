@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy import String, Boolean, Integer, Float, Text, ForeignKey, DateTime
+from sqlalchemy import String, Boolean, Integer, Float, Text, ForeignKey, DateTime, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base, TimestampMixin
@@ -94,6 +94,9 @@ class ExamAttempt(Base, TimestampMixin):
 
 class StudentAnswer(Base):
     __tablename__ = "student_answers"
+    __table_args__ = (
+        UniqueConstraint("attempt_id", "question_id", name="uq_attempt_question_answer"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     attempt_id: Mapped[str] = mapped_column(String(36), ForeignKey("exam_attempts.id", ondelete="CASCADE"), nullable=False)
@@ -105,6 +108,7 @@ class StudentAnswer(Base):
     points_awarded: Mapped[float] = mapped_column(Float, default=0.0)
     is_flagged: Mapped[bool] = mapped_column(Boolean, default=False)
     time_spent_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     answered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), onupdate=datetime.utcnow, nullable=True)
 

@@ -55,6 +55,15 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
     Record<string, "SAVED" | "SAVING" | "ERROR">
   >({});
   const versionCounters = useRef<Record<string, number>>({});
+  const textDebounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
+
+  // Clean up debounce timers on unmount
+  useEffect(() => {
+    const timers = textDebounceTimers.current;
+    return () => {
+      Object.values(timers).forEach((t) => clearTimeout(t));
+    };
+  }, []);
 
   // Timer & submission state
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
@@ -100,6 +109,9 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
     setIsSubmitting(true);
     setSubmitError(null);
 
+    // Clear any pending debounced autosaves
+    Object.values(textDebounceTimers.current).forEach((t) => clearTimeout(t));
+
     try {
       const result = await examsApi.submitAttempt(attemptId);
       setSubmitResult(result);
@@ -135,14 +147,16 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
     }
   }, [attempt, attemptId, submitResult]);
 
-  // Authoritative Countdown Timer
+  // Authoritative Countdown Timer with Server Clock Skew Mitigation
   useEffect(() => {
     if (!attempt || attempt.status !== "IN_PROGRESS") return;
 
     const deadlineMs = parseServerDate(attempt.deadline_at);
+    const serverNowMs = attempt.server_time ? parseServerDate(attempt.server_time) : Date.now();
+    const serverTimeOffset = serverNowMs - Date.now();
 
     const updateTimer = () => {
-      const nowMs = Date.now();
+      const nowMs = Date.now() + serverTimeOffset;
       const diffSec = Math.max(0, Math.floor((deadlineMs - nowMs) / 1000));
       setRemainingSeconds(diffSec);
 
@@ -174,7 +188,7 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
       .padStart(2, "0")}`;
   };
 
-  // Debounced/Safe Autosave Handler
+  // Safe Autosave Handler with atomic versioning
   const handleSaveAnswer = useCallback(
     async (
       questionId: string,
@@ -221,6 +235,7 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
           answer_text: newAnswer.answer_text,
           is_flagged: newAnswer.is_flagged,
           time_spent_seconds: newAnswer.time_spent_seconds,
+          client_version: currentVersion,
         });
 
         // Ensure this response is for the latest requested version to prevent race conditions
@@ -242,6 +257,47 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
       }
     },
     [attempt, attemptId, selectedAnswers, startTimeRef]
+  );
+
+  // Debounced Short Answer text handler (400ms debounce)
+  const handleTextChange = useCallback(
+    (questionId: string, text: string) => {
+      const existing = selectedAnswers[questionId] || {
+        is_flagged: false,
+        time_spent_seconds: 0,
+      };
+
+      const newAnswer: SavedAnswerItem = {
+        ...existing,
+        answer_text: text,
+        time_spent_seconds: Math.floor((Date.now() - startTimeRef) / 1000),
+      };
+
+      setLocalAnswers((prev) => ({
+        ...prev,
+        [questionId]: newAnswer,
+      }));
+
+      setLocalSaveStatuses((prev) => ({
+        ...prev,
+        [questionId]: "SAVING",
+      }));
+
+      if (textDebounceTimers.current[questionId]) {
+        clearTimeout(textDebounceTimers.current[questionId]);
+      }
+
+      textDebounceTimers.current[questionId] = setTimeout(() => {
+        handleSaveAnswer(
+          questionId,
+          undefined,
+          undefined,
+          text,
+          existing.is_flagged
+        );
+      }, 400);
+    },
+    [handleSaveAnswer, selectedAnswers, startTimeRef]
   );
 
   // Toggle Flag on Question
@@ -469,10 +525,22 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
                   </CardHeader>
 
                   <CardContent className="pt-2 space-y-3">
+                    {/* Student's answer text for SHORT_ANSWER */}
+                    {q.question_type === "SHORT_ANSWER" && (
+                      <div className="p-3 rounded-lg bg-slate-50 border border-slate-100 text-xs">
+                        <span className="font-semibold text-slate-700">Câu trả lời của bạn: </span>
+                        <span className={`font-bold ${q.is_correct ? "text-emerald-700" : "text-rose-600"}`}>
+                          {q.student_answer_text || "(Chưa trả lời)"}
+                        </span>
+                      </div>
+                    )}
+
                     <div className="p-3 rounded-lg bg-slate-50 border border-slate-100 text-xs">
                       <span className="font-semibold text-slate-700">Đáp án đúng: </span>
                       <span className="font-bold text-emerald-700">
-                        {q.correct_option_keys?.join(", ") || "Đáp án chuẩn"}
+                        {q.correct_answer_texts && q.correct_answer_texts.length > 0
+                          ? q.correct_answer_texts.join(" / ")
+                          : q.correct_option_keys?.join(", ") || "Đáp án chuẩn"}
                       </span>
                     </div>
 
@@ -767,15 +835,7 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
                     <input
                       type="text"
                       value={currentSaved?.answer_text || ""}
-                      onChange={(e) =>
-                        handleSaveAnswer(
-                          currentQId,
-                          undefined,
-                          undefined,
-                          e.target.value,
-                          currentSaved?.is_flagged
-                        )
-                      }
+                      onChange={(e) => handleTextChange(currentQId, e.target.value)}
                       placeholder="Gõ đáp án của bạn tại đây..."
                       className="w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-indigo-500 focus:outline-hidden focus:ring-2 focus:ring-indigo-100"
                     />

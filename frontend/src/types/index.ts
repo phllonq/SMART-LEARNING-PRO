@@ -258,9 +258,11 @@ export interface ExamStartResponse {
   attempt_number: number;
   started_at: string;
   deadline_at: string;
+  server_time?: string;
   duration_minutes: number;
   total_questions: number;
   questions: ExamAttemptQuestion[];
+  saved_answers?: Record<string, SavedAnswerItem>;
 }
 
 export interface SavedAnswerItem {
@@ -269,6 +271,7 @@ export interface SavedAnswerItem {
   answer_text?: string | null;
   is_flagged: boolean;
   time_spent_seconds: number;
+  version?: number;
 }
 
 export interface AttemptDetailResponse {
@@ -278,6 +281,7 @@ export interface AttemptDetailResponse {
   status: string;
   started_at: string;
   deadline_at: string;
+  server_time?: string;
   time_spent_seconds: number;
   questions: ExamAttemptQuestion[];
   saved_answers: Record<string, SavedAnswerItem>;
@@ -289,22 +293,27 @@ export interface AutosaveAnswerRequest {
   answer_text?: string | null;
   is_flagged?: boolean;
   time_spent_seconds?: number;
+  client_version?: number;
 }
 
 export interface AutosaveAnswerResponse {
   status: string;
   attempt_id: string;
   question_id: string;
+  version?: number;
   saved_at: string;
 }
 
 export interface QuestionReviewItem {
   question_id: string;
   content: string;
+  question_type?: string;
   is_correct: boolean;
   points_awarded: number;
   max_points: number;
+  student_answer_text?: string | null;
   correct_option_keys: string[];
+  correct_answer_texts?: string[];
   explanation?: string | null;
 }
 
@@ -322,6 +331,7 @@ export interface ExamSubmitResponse {
   accuracy_percentage: number;
   feedback_summary?: string | null;
   submitted_at: string;
+  server_time?: string;
   review_allowed: boolean;
   question_reviews?: QuestionReviewItem[] | null;
 }

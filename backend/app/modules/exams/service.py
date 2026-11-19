@@ -414,10 +414,14 @@ async def start_exam_attempt(
             random.shuffle(opts)
 
         # Sanitized options for student (WITHOUT is_correct)
-        sanitized_opts = [
-            {"id": o.id, "option_key": o.option_key, "content": o.content, "order_index": i + 1}
-            for i, o in enumerate(opts)
-        ]
+        # STRICT CONFIDENTIALITY: Never expose accepted answer text/options for SHORT_ANSWER
+        if q.question_type == QuestionType.SHORT_ANSWER.value:
+            sanitized_opts = []
+        else:
+            sanitized_opts = [
+                {"id": o.id, "option_key": o.option_key, "content": o.content, "order_index": i + 1}
+                for i, o in enumerate(opts)
+            ]
         # Full options with answer keys for internal server-side grading
         full_opts = [
             {"id": o.id, "option_key": o.option_key, "content": o.content, "is_correct": o.is_correct, "order_index": i + 1}
@@ -505,6 +509,7 @@ async def get_attempt_detail(db: AsyncSession, attempt_id: str, user: User) -> T
         .options(
             selectinload(ExamAttempt.answers),
             selectinload(ExamAttempt.exam),
+            selectinload(ExamAttempt.assignment),
             selectinload(ExamAttempt.result)
         )
     )
@@ -564,6 +569,7 @@ async def autosave_answer(
     answer = ans_res.scalar_one_or_none()
 
     opt_ids_json = json.dumps(data.selected_option_ids) if data.selected_option_ids else None
+    req_version = data.client_version or 1
 
     if not answer:
         answer = StudentAnswer(
@@ -574,23 +580,48 @@ async def autosave_answer(
             answer_text=data.answer_text,
             is_flagged=data.is_flagged,
             time_spent_seconds=data.time_spent_seconds,
+            version=req_version,
             answered_at=now
         )
         db.add(answer)
+        try:
+            await db.flush()
+        except IntegrityError:
+            # Race condition: concurrent autosave inserted the record between select and flush
+            await db.rollback()
+            # Re-fetch the winning record and update it safely
+            ans_res2 = await db.execute(existing_query)
+            answer = ans_res2.scalar_one()
+            # Discard stale packet if client_version is lower than current answer version
+            if data.client_version is not None and data.client_version < answer.version:
+                return answer
+            answer.selected_option_id = data.selected_option_id
+            answer.selected_option_ids_json = opt_ids_json
+            answer.answer_text = data.answer_text
+            answer.is_flagged = data.is_flagged
+            answer.time_spent_seconds = max(answer.time_spent_seconds, data.time_spent_seconds)
+            answer.version = max(answer.version + 1, req_version)
+            answer.answered_at = now
+            answer.updated_at = now
+            await db.flush()
     else:
-        # Out-of-order protection: discard delayed packet if time_spent is strictly lower than existing recorded time
-        if data.time_spent_seconds < answer.time_spent_seconds:
+        # Discard stale packet if client_version is lower than answer.version
+        if data.client_version is not None and data.client_version < answer.version:
+            return answer
+        # Fallback out-of-order protection if client_version is not provided
+        if data.client_version is None and data.time_spent_seconds < answer.time_spent_seconds:
             return answer
 
         answer.selected_option_id = data.selected_option_id
         answer.selected_option_ids_json = opt_ids_json
         answer.answer_text = data.answer_text
         answer.is_flagged = data.is_flagged
-        answer.time_spent_seconds = data.time_spent_seconds
+        answer.time_spent_seconds = max(answer.time_spent_seconds, data.time_spent_seconds)
+        answer.version = max(answer.version + 1, req_version)
         answer.answered_at = now
         answer.updated_at = now
+        await db.flush()
 
-    await db.flush()
     await db.refresh(answer)
     return answer
 
@@ -613,12 +644,34 @@ async def submit_exam_attempt(
     """
     attempt, snapshot = await get_attempt_detail(db, attempt_id, user=user)
 
+    # Determine assignment vs standalone review and deadline policies
+    if attempt.assignment_id and attempt.assignment:
+        is_assignment = True
+        review_allowed = bool(attempt.assignment.allow_review)
+        allow_late = bool(attempt.assignment.allow_late_submission)
+        due_date = ensure_utc(attempt.assignment.due_date)
+    else:
+        is_assignment = True if attempt.assignment_id else False
+        review_allowed = bool(attempt.exam.allow_review)
+        allow_late = False
+        due_date = None
+
+    now = datetime.now(timezone.utc)
+    deadline = ensure_utc(attempt.deadline_at)
+
+    # Authoritative deadline enforcement
+    if not auto_submitted:
+        if is_assignment and due_date and now > due_date and not allow_late:
+            auto_submitted = True
+        elif deadline and now > deadline and not allow_late:
+            auto_submitted = True
+
     # 1. Idempotency Check: if already graded or submitted, return existing result
     if attempt.status in [AttemptStatus.SUBMITTED.value, AttemptStatus.AUTO_SUBMITTED.value, AttemptStatus.GRADED.value]:
         if attempt.result:
             r = attempt.result
             q_reviews = None
-            if attempt.exam.allow_review:
+            if review_allowed:
                 rev_resp = await get_attempt_review(db, attempt_id, user=user)
                 q_reviews = rev_resp.question_reviews
 
@@ -636,11 +689,11 @@ async def submit_exam_attempt(
                 accuracy_percentage=r.accuracy_percentage,
                 feedback_summary=r.feedback_summary,
                 submitted_at=attempt.submitted_at or attempt.created_at,
-                review_allowed=attempt.exam.allow_review,
+                server_time=now,
+                review_allowed=review_allowed,
                 question_reviews=q_reviews
             )
 
-    now = datetime.now(timezone.utc)
     attempt.submitted_at = now
     attempt.status = AttemptStatus.AUTO_SUBMITTED.value if auto_submitted else AttemptStatus.SUBMITTED.value
 
@@ -746,15 +799,19 @@ async def submit_exam_attempt(
                 ans.points_awarded = points_awarded
                 total_score += points_awarded
 
-            if attempt.exam.allow_review:
+            if review_allowed:
                 correct_keys = [o["option_key"] for o in options if o.get("is_correct")]
+                correct_texts = [o["content"] for o in options if o.get("is_correct")]
                 question_reviews.append({
                     "question_id": qid,
                     "content": q_content,
+                    "question_type": q_type,
                     "is_correct": is_correct,
                     "points_awarded": points_awarded,
                     "max_points": max_q_points,
+                    "student_answer_text": ans.answer_text if ans else None,
                     "correct_option_keys": correct_keys,
+                    "correct_answer_texts": correct_texts,
                     "explanation": q_explanation
                 })
 
@@ -819,15 +876,19 @@ async def submit_exam_attempt(
                 ans.points_awarded = points_awarded
                 total_score += points_awarded
 
-            if attempt.exam.allow_review:
+            if review_allowed:
                 correct_keys = [o.option_key for o in question.options if o.is_correct]
+                correct_texts = [o.content for o in question.options if o.is_correct]
                 question_reviews.append({
                     "question_id": qid,
                     "content": question.content,
+                    "question_type": question.question_type,
                     "is_correct": is_correct,
                     "points_awarded": points_awarded,
                     "max_points": max_q_points,
+                    "student_answer_text": ans.answer_text if ans else None,
                     "correct_option_keys": correct_keys,
+                    "correct_answer_texts": correct_texts,
                     "explanation": question.explanation
                 })
 
@@ -895,8 +956,9 @@ async def submit_exam_attempt(
         accuracy_percentage=accuracy,
         feedback_summary=feedback,
         submitted_at=now,
-        review_allowed=attempt.exam.allow_review,
-        question_reviews=question_reviews if attempt.exam.allow_review else None
+        server_time=now,
+        review_allowed=review_allowed,
+        question_reviews=question_reviews if review_allowed else None
     )
 
 
@@ -915,8 +977,13 @@ async def get_attempt_review(
         raise PermissionDeniedException("Bài thi chưa được nộp. Không thể xem lại đáp án.")
 
     is_privileged = user.role in [UserRole.TEACHER.value, UserRole.ADMIN.value, UserRole.SUPERADMIN.value]
-    if not is_privileged and not attempt.exam.allow_review:
-        raise PermissionDeniedException("Đề thi này không cho phép xem lại bài làm.")
+    if attempt.assignment_id and attempt.assignment:
+        review_allowed = bool(attempt.assignment.allow_review)
+    else:
+        review_allowed = bool(attempt.exam.allow_review)
+
+    if not is_privileged and not review_allowed:
+        raise PermissionDeniedException("Bài thi/bài tập này không cho phép xem lại bài làm.")
 
     # Fetch answers
     answers_query = select(StudentAnswer).where(StudentAnswer.attempt_id == attempt_id)
@@ -952,26 +1019,35 @@ async def get_attempt_review(
             snap_q = snapshot_keys_map[qid]
             opts = snap_q.get("options", [])
             correct_keys = [o["option_key"] for o in opts if o.get("is_correct")]
+            correct_texts = [o["content"] for o in opts if o.get("is_correct")]
             explanation = snap_q.get("explanation")
             content = snap_q.get("content", q_item.get("content", ""))
             max_q_points = snap_q.get("points", max_q_points)
+            q_type = snap_q.get("question_type", q_item.get("question_type", "SINGLE_CHOICE"))
         elif qid in db_questions_map:
             q = db_questions_map[qid]
             correct_keys = [o.option_key for o in q.options if o.is_correct]
+            correct_texts = [o.content for o in q.options if o.is_correct]
             explanation = q.explanation
             content = q.content
+            q_type = q.question_type
         else:
             correct_keys = []
+            correct_texts = []
             explanation = None
             content = q_item.get("content", "")
+            q_type = q_item.get("question_type", "SINGLE_CHOICE")
 
         question_reviews.append({
             "question_id": qid,
             "content": content,
+            "question_type": q_type,
             "is_correct": is_correct,
             "points_awarded": points_awarded,
             "max_points": max_q_points,
+            "student_answer_text": ans.answer_text if ans else None,
             "correct_option_keys": correct_keys,
+            "correct_answer_texts": correct_texts,
             "explanation": explanation
         })
 
@@ -997,6 +1073,7 @@ async def get_attempt_review(
         accuracy_percentage=accuracy,
         feedback_summary=feedback,
         submitted_at=attempt.submitted_at or attempt.created_at,
+        server_time=datetime.now(timezone.utc),
         review_allowed=True,
         question_reviews=question_reviews
     )

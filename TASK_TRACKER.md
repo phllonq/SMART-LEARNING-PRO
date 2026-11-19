@@ -110,6 +110,26 @@
 - [x] Quality Gates: TypeScript (0 errors), ESLint (0 errors, 0 warnings), Next.js Build (23/23 routes), Pytest (31/31 PASS in 6.52s)
 - [x] Documentation: Created `docs/PHASE_6_3_STUDENT_EXAM_INTERFACE.md`
 
+## Phase 6.3.1: Post-Implementation Technical Audit
+- [x] Read-Only technical audit of Phase 6.3 implementation against all 4 GDPT question types
+- [x] Audit question type lifecycle: SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE, SHORT_ANSWER
+- [x] Audit autosave concurrency, race conditions, and out-of-order delivery
+- [x] Audit assignment-level policy enforcement and deadline boundaries
+- [x] Classified 4 critical defects and 4 medium/low findings
+- [x] Documentation: Created `docs/PHASE_6_3_1_POST_IMPLEMENTATION_AUDIT.md`
+
+## Phase 6.3.2: Exam Engine Hardening & Remediation
+- [x] Task A: Fix SHORT_ANSWER confidentiality leak — `sanitized_opts = []` in student snapshot, validate ≥1 correct option in schema, expose correct answer texts in review
+- [x] Task B: Database migration `scripts/migrate_phase632.py` — added `version` column and `UNIQUE INDEX uq_attempt_question_answer` on `student_answers`
+- [x] Task B: Concurrency handling in SQLAlchemy — catch `IntegrityError` on autosave flush, rollback, re-fetch, and update safely
+- [x] Task C: Frontend 400ms real debounce on text inputs (`handleTextChange`) to prevent network flooding
+- [x] Task C: Atomic versioning — `client_version` tracking in request/response; ignore stale out-of-order packets
+- [x] Task D: Assignment policy priority — `allow_review` and `allow_late_submission` from `ExamAttempt.assignment` override exam settings on submit & review
+- [x] Task E: Server-side authoritative deadline check on `get_attempt` and `submit_exam_attempt`; client clock skew mitigation via `serverTimeOffset`
+- [x] Task F: Comprehensive automated tests in `backend/tests/test_hardening_632.py` (confidentiality, versioning, assignment policies, 4 question types E2E)
+- [x] Full Quality Gates Verification: Backend Pytest (35/35 PASS in 11.92s), TypeScript (0 errors), ESLint (0 errors, 0 warnings), Next.js Build (23/23 routes), Playwright E2E (36/36 PASS in 18.8s)
+- [x] Documentation: Created `docs/PHASE_6_3_2_HARDENING_REPORT.md`
+
 ## Phase 7: AI Engine (Next Phase)
 - [ ] Gemini API integration for automated question diagnosis
 - [ ] Socratic AI Tutor interactive chat

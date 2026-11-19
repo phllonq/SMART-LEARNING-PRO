@@ -4,15 +4,17 @@
 - **Product Name**: SMART LEARNING PRO
 - **Location**: `E:\SMART-LEARNING-PRO`
 - **Target Audience**: Middle & High School Students (THCS & THPT) in Vietnam, Teachers, and School Administrators.
-- **Current Phase**: PHASE 6.3 — Student Exam Interface Implementation:
-  - **Student Exam Interactive Interface**: **PASS** (Full interactive examination experience at `/student/exams/[id]` and `/student/exams/attempts/[attemptId]` implementing question navigator, matrix, KaTeX formula rendering, single/multiple/true-false/short-answer selection, authoritative server countdown timer with auto-submit, debounced autosave with clear `SAVING`/`SAVED`/`ERROR` indicators, submit confirmation dialog, results screen with score/accuracy/correct/wrong/skipped counts, solution reviews when allowed, and anti-IDOR security).
-  - **Student Exam Lifecycle Verification**: **PASS** (All 16 lifecycle scenarios verified end-to-end with live FastAPI backend on real Google Chrome).
-  - **Teacher Mutations & Ownership Boundaries**: **PASS** (Classroom creation, exam creation, exam publishing, assignment creation/publishing/cancellation; strict HTTP 403 boundary preventing Teacher B from tampering with Teacher A's resources).
-  - **Backend Authorization Matrix**: **PASS** (21 API endpoints verified across Student, Teacher, Admin, and Unauthenticated roles; 100% authorization isolation).
+- **Current Phase**: PHASE 6.3.2 — Exam Engine Hardening & Remediation:
+  - **SHORT_ANSWER Confidentiality & Auto-Grading**: **PASS** (Zero option exposure during active attempt `sanitized_opts = []`; answer key snapshot securely held in server DB snapshot; normalized text auto-grading; full review exposure).
+  - **`student_answers` Table Data Integrity**: **PASS** (Migration script `migrate_phase632.py` executed safely; `version` integer column and `UNIQUE INDEX uq_attempt_question_answer` applied; optimistic concurrency handling with rollback and retry).
+  - **Autosave Consistency & Debouncing**: **PASS** (400ms real debounce on text inputs; `client_version` tracking preventing older out-of-order packets from overwriting newer answers; immediate optimistic UI response).
+  - **Assignment Policy Priority**: **PASS** (Assignment `allow_review` and `allow_late_submission` override standalone exam settings on submission and review endpoints).
+  - **Server-Side Deadline Enforcement**: **PASS** (Backend authoritative auto-submission on expiration; `serverTimeOffset` client clock skew mitigation).
+  - **All 4 Question Types Full Coverage**: **PASS** (`SINGLE_CHOICE`, `MULTIPLE_CHOICE`, `TRUE_FALSE`, `SHORT_ANSWER` covered end-to-end with automated tests).
   - **Automated Playwright E2E Suite**: **36/36 PASS** on real Google Chrome (`channel: 'chrome'`) across all test suites.
   - **Frontend Quality Gates**: TypeScript check (0 errors), ESLint (0 errors, 0 warnings), Next.js Build (23/23 static and dynamic routes compiled successfully).
-  - **Backend Quality Gates**: 31/31 Automated Pytest tests PASSING in 6.52s.
-- **Overall Status**: VERIFIED, FULL-STACK INTEGRATED, HIGH CODE INTEGRITY, RIGOROUS E2E & QUALITY GATES PASSING
+  - **Backend Quality Gates**: 35/35 Automated Pytest tests PASSING in 11.92s.
+- **Overall Status**: VERIFIED, HARDENED, HIGH CONCURRENCY RESILIENCE, RIGOROUS QUALITY GATES PASSING
 
 ---
 
@@ -20,19 +22,20 @@
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| **Git integrity** | **PASS** | Baseline commit `85897c8`. Clean, structured repository. |
-| **Backend Integration Tests** | **PASS** | 31/31 tests passing in 6.52s with `backend/pytest.ini`. |
+| **Git integrity** | **PASS** | Baseline commit `ca43c16`. Clean, structured repository. |
+| **Backend Integration Tests** | **PASS** | 35/35 tests passing in 11.92s with `backend/pytest.ini` (including `test_hardening_632.py`). |
 | **Frontend Setup** | **PASS** | Next.js 16.4.6 App Router, React 19.3.0, Tailwind CSS v4, TanStack Query v5, Lucide React, KaTeX. |
 | **TypeScript Strictness** | **PASS** | `npx tsc --noEmit` completed with EXIT CODE 0 (0 errors). |
 | **ESLint Quality** | **PASS** | `npm run lint` completed with EXIT CODE 0 (0 errors, 0 warnings). |
 | **Production Build** | **PASS** | `npm run build` completed with EXIT CODE 0. All 23 static and dynamic routes compiled successfully. |
-| **E2E Browser Automation** | **PASS** | 36/36 tests passing in 15.3s on real Google Chrome (`channel: 'chrome'`) with live FastAPI backend (`scripts/test_e2e.ps1`). |
+| **E2E Browser Automation** | **PASS** | 36/36 tests passing in 18.8s on real Google Chrome (`channel: 'chrome'`) with live FastAPI backend (`scripts/test_e2e.ps1`). |
 | **Interactive Exam UI** | **PASS** | Complete student exam workflow (`/student/exams/[id]`, `/student/exams/attempts/[attemptId]`, matrix navigator, KaTeX, autosave, timer, auto-submit, results & review). |
+| **Exam Engine Hardening** | **PASS** | SHORT_ANSWER confidentiality, unique answer constraint, 400ms debounce, client_version tracking, assignment policy priority, server deadline enforcement. |
 | **Exam Lifecycle Security** | **PASS** | Anti-leak verified (zero `is_correct` and `explanation` in questions snapshot), autosave persistence, idempotent scoring, 403 IDOR review protection. |
 | **Teacher Ownership Isolation** | **PASS** | Strict HTTP 403 Forbidden enforcement preventing cross-teacher tampering (classrooms, exams, assignments). |
 | **Token Security Posture** | **AUDITED** | Dual-mode (Bearer in `sessionStorage` + HttpOnly cookie readiness). Risks SEC-01 and SEC-02 classified with mitigation roadmaps. |
 | **Math KaTeX Sanitization** | **PASS** | Strict regex delimiter tokenization with React escaping for text tokens; KaTeX `throwOnError: false` and `trust: false`. |
-| **Documentation** | **PASS** | `PHASE_6_3_STUDENT_EXAM_INTERFACE.md`, `PHASE_6_2_CRITICAL_VERIFICATION.md`, `PHASE_6_1_FUNCTIONAL_AUDIT.md`. |
+| **Documentation** | **PASS** | `PHASE_6_3_2_HARDENING_REPORT.md`, `PHASE_6_3_1_POST_IMPLEMENTATION_AUDIT.md`, `PHASE_6_3_STUDENT_EXAM_INTERFACE.md`. |
 
 ---
 
@@ -51,7 +54,9 @@
 | Phase 6.1 | Frontend Functional Integration & RBAC Audit | **PASS** | 100% | Playwright E2E 18/18 PASS on Chrome, sessionStorage migration, KaTeX XSS hardening |
 | Phase 6.2 | Critical Workflow & Security Verification | **PASS** | 100% | Playwright E2E 34/34 PASS on Chrome, Exam & Mutation verification, Authorization matrix, PHASE_6_2_CRITICAL_VERIFICATION.md |
 | Phase 6.3 | Student Exam Interface Implementation | **PASS** | 100% | Interactive exam entry, live examination room, matrix, autosave, timer, auto-submit, results, reviews, E2E 36/36 PASS, PHASE_6_3_STUDENT_EXAM_INTERFACE.md |
+| Phase 6.3.1 | Post-Implementation Technical Audit | **PASS** | 100% | Independent technical audit, 4 critical defects identified, PHASE_6_3_1_POST_IMPLEMENTATION_AUDIT.md |
+| Phase 6.3.2 | Exam Engine Hardening & Remediation | **PASS** | 100% | Confidentiality fix, UniqueConstraint, versioning, 400ms debounce, assignment policy priority, 35/35 Pytest, 36/36 Playwright, PHASE_6_3_2_HARDENING_REPORT.md |
 | Phase 7 | AI Engine & Socratic Tutor Integration | PENDING | 0% | Gemini API diagnostics, Socratic chat, adaptive practice |
 | Phase 8 | Gamification & UX Refinement | IN PROGRESS | 60% | Streaks, XP badges, Level UI integrated into Student portal |
-| Phase 9 | Testing & Quality Assurance | **PASS** | 100% | 31/31 Backend tests PASS, 36/36 E2E tests PASS, TypeScript PASS, ESLint PASS, Next.js build PASS |
+| Phase 9 | Testing & Quality Assurance | **PASS** | 100% | 35/35 Backend tests PASS, 36/36 E2E tests PASS, TypeScript PASS, ESLint PASS, Next.js build PASS |
 | Phase 10 | Docker, Deployment & Final Release | PENDING | 0% | Dockerfile, docker-compose, production readiness |

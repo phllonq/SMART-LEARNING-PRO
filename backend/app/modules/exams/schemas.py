@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel, Field, ConfigDict, model_validator
-from datetime import datetime
+from datetime import datetime, timezone
 from app.modules.exams.models import ExamStatus, AttemptStatus
 
 
@@ -99,6 +99,7 @@ class ExamStartResponse(BaseModel):
     attempt_number: int
     started_at: datetime
     deadline_at: datetime
+    server_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     duration_minutes: int
     total_questions: int
     # Snapshot of questions WITHOUT answer keys
@@ -111,12 +112,14 @@ class AutosaveAnswerRequest(BaseModel):
     answer_text: Optional[str] = None
     is_flagged: bool = False
     time_spent_seconds: int = 0
+    client_version: Optional[int] = None
 
 
 class AutosaveAnswerResponse(BaseModel):
     status: str = "SAVED"
     attempt_id: str
     question_id: str
+    version: int = 1
     saved_at: datetime
 
 
@@ -134,6 +137,7 @@ class ExamSubmitResponse(BaseModel):
     accuracy_percentage: float
     feedback_summary: Optional[str] = None
     submitted_at: datetime
+    server_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     review_allowed: bool = False
     question_reviews: Optional[List[Dict[str, Any]]] = None
 

@@ -1,4 +1,6 @@
+import json
 import math
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, Query, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +9,7 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user, get_optional_current_user, require_roles
 from app.modules.auth.models import User, UserRole
 from app.modules.curriculum.schemas import PaginatedResponse
-from app.modules.exams.models import ExamStatus
+from app.modules.exams.models import ExamStatus, AttemptStatus
 from app.modules.exams.schemas import (
     ExamCreate, ExamUpdate, ExamSummaryResponse, ExamDetailResponse,
     ExamQuestionAssign, ExamStartResponse, AutosaveAnswerRequest,
@@ -17,7 +19,8 @@ from app.modules.exams.service import (
     create_exam, get_exams, get_exam_by_id, update_exam,
     add_question_to_exam, remove_question_from_exam, publish_exam, archive_exam,
     get_available_exams_for_student, start_exam_attempt, get_attempt_detail,
-    autosave_answer, submit_exam_attempt, get_attempt_review, get_exam_submissions_for_teacher
+    autosave_answer, submit_exam_attempt, get_attempt_review, get_exam_submissions_for_teacher,
+    ensure_utc
 )
 
 router = APIRouter(prefix="/exams", tags=["Examinations"])
@@ -53,6 +56,7 @@ async def start_exam(
         attempt_number=attempt.attempt_number,
         started_at=attempt.started_at,
         deadline_at=attempt.deadline_at,
+        server_time=datetime.now(timezone.utc),
         duration_minutes=duration,
         total_questions=len(snapshot),
         questions=snapshot
@@ -68,18 +72,38 @@ async def get_attempt(
     """
     Retrieve attempt state and questions snapshot for the student.
     Confidentiality: Answer keys and teacher solutions are stripped from questions snapshot.
+    Enforces server-side deadline auto-submission if time expired.
     """
     attempt, snapshot = await get_attempt_detail(db, attempt_id, user=current_user)
     
+    # Check server-side deadline: if attempt is IN_PROGRESS and deadline has passed, auto-submit
+    now = datetime.now(timezone.utc)
+    deadline = ensure_utc(attempt.deadline_at) if attempt.deadline_at else None
+    if attempt.status == AttemptStatus.IN_PROGRESS.value and deadline and now > deadline:
+        # Check late submission policy if assignment
+        allow_late = False
+        if attempt.assignment_id and attempt.assignment:
+            allow_late = bool(attempt.assignment.allow_late_submission)
+        if not allow_late:
+            await submit_exam_attempt(db, attempt_id, current_user, auto_submitted=True)
+            attempt, snapshot = await get_attempt_detail(db, attempt_id, user=current_user)
+
     # Return saved answers map for easy UI population
     saved_answers = {}
     for a in attempt.answers:
+        opt_ids = None
+        if a.selected_option_ids_json:
+            try:
+                opt_ids = json.loads(a.selected_option_ids_json)
+            except Exception:
+                opt_ids = []
         saved_answers[a.question_id] = {
             "selected_option_id": a.selected_option_id,
-            "selected_option_ids": a.selected_option_ids_json,
+            "selected_option_ids": opt_ids,
             "answer_text": a.answer_text,
             "is_flagged": a.is_flagged,
-            "time_spent_seconds": a.time_spent_seconds
+            "time_spent_seconds": a.time_spent_seconds,
+            "version": a.version
         }
 
     return {
@@ -88,6 +112,7 @@ async def get_attempt(
         "status": attempt.status,
         "started_at": attempt.started_at,
         "deadline_at": attempt.deadline_at,
+        "server_time": now,
         "time_spent_seconds": attempt.time_spent_seconds,
         "questions": snapshot,
         "saved_answers": saved_answers
@@ -104,13 +129,14 @@ async def autosave(
 ):
     """
     Autosave student answer in real-time during an active examination attempt.
-    Enforces server-side deadline and student ownership.
+    Enforces server-side deadline, idempotency, version incrementing and student ownership.
     """
     answer = await autosave_answer(db, attempt_id, question_id, data, student=current_user)
     return AutosaveAnswerResponse(
         status="SAVED",
         attempt_id=answer.attempt_id,
         question_id=answer.question_id,
+        version=answer.version,
         saved_at=answer.answered_at
     )
 

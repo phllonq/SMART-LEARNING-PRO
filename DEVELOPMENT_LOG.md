@@ -293,3 +293,53 @@
   - **Documentation & Deliverables**:
     - Authored comprehensive report [docs/PHASE_6_3_STUDENT_EXAM_INTERFACE.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_3_STUDENT_EXAM_INTERFACE.md).
     - Updated `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, and `CHANGELOG.md`.
+
+## Session 12: Post-Implementation Technical Audit (Phase 6.3.1)
+- **Timestamp**: 2026-11-19 14:35:00 - 15:00:00
+- **Action**:
+  - Conducted an independent, read-only technical audit of Phase 6.3 implementation.
+  - Inspected question type lifecycle for `SINGLE_CHOICE`, `MULTIPLE_CHOICE`, `TRUE_FALSE`, and `SHORT_ANSWER`.
+  - Identified 4 Critical / High-Risk defects:
+    1. `SHORT_ANSWER` leaked accepted answer texts in active attempt payload.
+    2. `student_answers` table lacked UniqueConstraint `(attempt_id, question_id)`.
+    3. Autosave lacked text input debouncing and was vulnerable to out-of-order packet overwrite.
+    4. Submitting and reviewing homework assignments bypassed assignment-level review and late submission policies.
+  - Authored comprehensive audit report [docs/PHASE_6_3_1_POST_IMPLEMENTATION_AUDIT.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_3_1_POST_IMPLEMENTATION_AUDIT.md).
+
+## Session 13: Exam Engine Hardening & Remediation (Phase 6.3.2)
+- **Timestamp**: 2026-11-19 15:00:00 - 15:25:00
+- **Action**:
+  - **Database Migration (`scripts/migrate_phase632.py`)**:
+    - Audited 81 existing rows in `student_answers` with zero duplicates.
+    - Added `version INTEGER NOT NULL DEFAULT 1` to `student_answers`.
+    - Created `UNIQUE INDEX IF NOT EXISTS uq_attempt_question_answer ON student_answers(attempt_id, question_id)`.
+  - **Backend Hardening**:
+    - `backend/app/modules/questions/schemas.py`: Enforced at least 1 correct option in `SHORT_ANSWER` creation.
+    - `backend/app/modules/exams/models.py`: Added `version` column and `UniqueConstraint("attempt_id", "question_id", name="uq_attempt_question_answer")` to `StudentAnswer`.
+    - `backend/app/modules/exams/schemas.py`: Extended schemas with `client_version`, `version`, `server_time`, `student_answer_text`, and `correct_answer_texts`.
+    - `backend/app/modules/exams/service.py`:
+      - `start_exam_attempt`: Stripped options for `SHORT_ANSWER` (`sanitized_opts = []`), preventing answer leakage while preserving grading keys in snapshot.
+      - `autosave_answer`: Handled concurrent race conditions with `try ... db.flush() except IntegrityError: db.rollback()`, atomic version incrementing, and discarding stale requests with lower `client_version`.
+      - `submit_exam_attempt` & `get_attempt_review`: Authoritative priority for assignment-level policies (`allow_review`, `allow_late_submission`).
+    - `backend/app/modules/exams/router.py`: Server-side deadline check on `get_attempt` auto-submitting expired attempts; passed `version` in autosave response.
+  - **Frontend Hardening**:
+    - `frontend/src/types/index.ts`: Added `client_version`, `server_time`, `student_answer_text`, `correct_answer_texts`.
+    - `frontend/src/app/student/exams/attempts/[attemptId]/page.tsx`:
+      - Mitigated client clock skew using `serverTimeOffset = serverNowMs - Date.now()`.
+      - Implemented 400ms debounce on `SHORT_ANSWER` text inputs via `handleTextChange`.
+      - Sent `client_version` in autosave requests to reject stale out-of-order packets.
+      - Displayed student answer text and acceptable correct answers in review for `SHORT_ANSWER`.
+  - **Automated Testing & Full Quality Gates**:
+    - Authored `backend/tests/test_hardening_632.py` covering:
+      1. `test_short_answer_confidentiality_and_validation` (Confidentiality & 422 validation).
+      2. `test_student_answers_unique_constraint_and_autosave_versions` (Versioning & race handling).
+      3. `test_assignment_policy_enforcement` (Assignment policy priority 403 / 200).
+      4. `test_all_four_question_types_e2e` (E2E grading of all 4 GDPT types with 10.0 score).
+    - Pytest backend test suite: **35/35 PASSED in 11.92s (Exit code 0)**.
+    - TypeScript compiler check: **0 errors (Exit code 0)**.
+    - ESLint: **0 errors, 0 warnings (Exit code 0)**.
+    - Next.js Production Build: **23/23 routes compiled (Exit code 0)**.
+    - Playwright E2E Suite: **36/36 PASSED in 18.8s (Exit code 0)**.
+  - **Documentation & Deliverables**:
+    - Authored comprehensive report [docs/PHASE_6_3_2_HARDENING_REPORT.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_3_2_HARDENING_REPORT.md).
+    - Updated `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, and `CHANGELOG.md`.

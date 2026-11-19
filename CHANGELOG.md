@@ -1,5 +1,36 @@
 # CHANGELOG — SMART LEARNING PRO
 
+## [0.7.4] - 2026-11-19
+### Hardened & Fixed - Phase 6.3.2: Exam Engine Hardening & Remediation
+- **Bảo mật Đáp án SHORT_ANSWER (Task A)**:
+  - Loại bỏ hoàn toàn `options` trong snapshot gửi cho học sinh (`sanitized_opts = []`) khi bắt đầu làm bài; giải quyết triệt để rủi ro rò rỉ đáp án chuẩn qua payload JSON hoặc DevTools.
+  - Snapshot bảo mật máy chủ `answer_key_snapshot_json` giữ nguyên phương án đúng phục vụ tự động chấm điểm.
+  - Bổ sung schema validator bắt buộc câu hỏi `SHORT_ANSWER` phải có ít nhất 1 phương án đúng (`is_correct: True`).
+  - Hỗ trợ hiển thị `student_answer_text` và `correct_answer_texts` trong màn hình xem lại lời giải.
+- **Toàn vẹn Dữ liệu `student_answers` & Migration An Toàn (Task B)**:
+  - Tạo và thực thi script migration `scripts/migrate_phase632.py`: thêm cột `version INTEGER NOT NULL DEFAULT 1` và tạo `UNIQUE INDEX uq_attempt_question_answer ON student_answers(attempt_id, question_id)`.
+  - Cập nhật SQLAlchemy model `StudentAnswer` với `UniqueConstraint` và `version`.
+  - Bổ sung cơ chế xử lý race condition đồng thời trong `autosave_answer`: `try ... db.flush() except IntegrityError: db.rollback()` kèm retry cập nhật bản ghi đã tồn tại.
+- **Tính Nhất Quán Tự Động Lưu & Debounce (Task C)**:
+  - Tích hợp bộ đệm thời gian thực 400ms (Debounce) cho ô nhập văn bản tự luận ngắn trên frontend (`handleTextChange`), ngăn chặn việc gửi request dồn dập lên máy chủ khi người dùng gõ phím.
+  - Triển khai Atomic Versioning qua `client_version`: máy chủ từ chối các gói tin autosave đến trễ có phiên bản nhỏ hơn phiên bản hiện tại trong cơ sở dữ liệu.
+- **Độ Ưu Tiên Chính Sách Bài Tập Về Nhà (Task D)**:
+  - Chuẩn hóa router nộp bài và xem lại: khi bài thi được giao trong bài tập (`attempt.assignment_id is not None`), các thiết lập `allow_review` và `allow_late_submission` của Assignment có độ ưu tiên cao nhất so với đề thi gốc.
+  - Kiểm chứng tự động: Bài tập cấm xem lại trả về `403 Forbidden` dù đề thi gốc cho phép xem lại; Bài tập cho phép xem lại trả về `200 OK` dù đề thi gốc tắt xem lại.
+- **Kiểm Soát Hạn Nộp & Lệch Đồng Hồ Máy Khách (Task E)**:
+  - Bổ sung trường `server_time` trong response API; frontend tự động tính toán `serverTimeOffset = serverNowMs - Date.now()`, loại bỏ hoàn toàn hiện tượng lệch đồng hồ máy khách.
+  - Bổ sung kiểm tra deadline phía máy chủ trong `get_attempt`: tự động chuyển sang `AUTO_SUBMITTED` nếu đã quá hạn làm bài.
+- **Bao Phủ Kiểm Thử Toàn Diện 4 Dạng Câu Hỏi (Task F)**:
+  - Xây dựng test suite `backend/tests/test_hardening_632.py` với 4 bài kiểm thử tích hợp đầy đủ.
+  - Kiểm thử chấm điểm tự động đạt 10.0/10.0 cho cả 4 dạng câu hỏi: `SINGLE_CHOICE`, `MULTIPLE_CHOICE`, `TRUE_FALSE`, `SHORT_ANSWER`.
+- **Tiêu Chuẩn Chất Lượng (Quality Gates)**:
+  - Backend Pytest: **35/35 PASS trong 11.92s**.
+  - Frontend TypeScript: **0 errors**.
+  - Frontend ESLint: **0 errors, 0 warnings**.
+  - Next.js Production Build: **23/23 routes compiled thành công**.
+  - Playwright E2E: **36/36 PASS trong 18.8s**.
+- **Báo cáo Kỹ thuật**: Tạo [docs/PHASE_6_3_2_HARDENING_REPORT.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_3_2_HARDENING_REPORT.md).
+
 ## [0.7.3] - 2026-11-19
 ### Added & Verified - Phase 6.3: Student Exam Interface Implementation
 - **Giao diện Phòng Thi Học Sinh & Làm Bài Trực Tuyến**:
