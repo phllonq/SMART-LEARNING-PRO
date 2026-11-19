@@ -4,14 +4,13 @@
 - **Product Name**: SMART LEARNING PRO
 - **Location**: `E:\SMART-LEARNING-PRO`
 - **Target Audience**: Middle & High School Students (THCS & THPT) in Vietnam, Teachers, and School Administrators.
-- **Current Phase**: PHASE 6.3.6 — Submission Barrier & Answer Persistence Guarantee:
-  - **Centralized Autosave Tracking**: **PASS** (Active promises tracked per question in `inFlightAutosavePromises`; local revisions & server versions tracked; covers single, multiple, true/false, and short answer).
-  - **6-Stage Submission Barrier**: **PASS** (Stage 1 Freeze UI -> Stage 2 Flush debounces -> Stage 3 Await all in-flight promises -> Stage 4 Validate 100% answers confirmed SAVED -> Stage 5 Submit -> Stage 6 Unlock).
-  - **Submission Integrity & Guard**: **PASS** (Zero submission if any answer is `SAVING`, `CONFLICT`, or `ERROR`; submit confirmation button disabled when unresolved issues exist; detailed error messaging for failed questions).
-  - **Backend Submission Safety**: **PASS** (`submit_exam_attempt` verifies student ownership, deadline, and rejects any subsequent autosaves with HTTP 403 `PermissionDeniedException`; concurrent initial insert race condition handled safely via UniqueConstraint rollback).
-  - **Automated Playwright E2E Suite**: **36/36 PASS** on real Google Chrome (`channel: 'chrome'`) across all test suites, including network failure submission barrier blocking test.
+- **Current Phase**: PHASE 6.3.8 — Targeted Concurrency Remediation:
+  - **P1-01 Remediation (Frontend Promise Registry Race)**: **PASS** (Identity-checked deletion, Set-based in-flight promise tracking, while loop await in Stage 3, zero tracking leak on overlapping requests for the same question).
+  - **P1-02 Remediation (Backend Transaction Serialization)**: **PASS** (`with_for_update()` enabled on `ExamAttempt`, conditional atomic touch `UPDATE exam_attempts ... WHERE status = 'IN_PROGRESS'` in `autosave_answer`, immediate status flush in `submit_exam_attempt`).
+  - **Task C Test Gaps Closed**: **PASS** (Added Scenario 17 Regression P1-01, Scenario 18 Delayed MC Autosave, Scenario 19 Short Answer Debounce Flush to Playwright suite; added 3 backend serialization tests in `test_concurrency_remediation_638.py`).
+  - **Automated Playwright E2E Suite**: **39/39 PASS** in 27.3s on real Google Chrome (`channel: 'chrome'`) across all test suites.
   - **Frontend Quality Gates**: TypeScript check (0 errors), ESLint (0 errors, 0 warnings), Next.js Build (23/23 static and dynamic routes compiled successfully).
-  - **Backend Quality Gates**: 41/41 Automated Pytest tests PASSING in 14.13s (including `test_concurrent_first_insert_race_condition` and `test_post_submit_autosave_rejected`).
+  - **Backend Quality Gates**: 44/44 Automated Pytest tests PASSING in 14.32s (including concurrency and serialization test suites).
 - **Overall Status**: VERIFIED, HARDENED, HIGH CONCURRENCY RESILIENCE, RIGOROUS QUALITY GATES PASSING
 
 ---
@@ -21,12 +20,12 @@
 | Requirement | Status | Evidence |
 |---|---|---|
 | **Git integrity** | **PASS** | Baseline commit `ca43c16`. Clean, structured repository. |
-| **Backend Integration Tests** | **PASS** | 35/35 tests passing in 11.92s with `backend/pytest.ini` (including `test_hardening_632.py`). |
+| **Backend Integration Tests** | **PASS** | 44/44 tests passing in 14.32s with `backend/pytest.ini` (including `test_concurrency_remediation_638.py`). |
 | **Frontend Setup** | **PASS** | Next.js 16.4.6 App Router, React 19.3.0, Tailwind CSS v4, TanStack Query v5, Lucide React, KaTeX. |
 | **TypeScript Strictness** | **PASS** | `npx tsc --noEmit` completed with EXIT CODE 0 (0 errors). |
 | **ESLint Quality** | **PASS** | `npm run lint` completed with EXIT CODE 0 (0 errors, 0 warnings). |
 | **Production Build** | **PASS** | `npm run build` completed with EXIT CODE 0. All 23 static and dynamic routes compiled successfully. |
-| **E2E Browser Automation** | **PASS** | 36/36 tests passing in 18.8s on real Google Chrome (`channel: 'chrome'`) with live FastAPI backend (`scripts/test_e2e.ps1`). |
+| **E2E Browser Automation** | **PASS** | 39/39 tests passing in 27.3s on real Google Chrome (`channel: 'chrome'`) with live FastAPI backend (`scripts/test_e2e.ps1`). |
 | **Interactive Exam UI** | **PASS** | Complete student exam workflow (`/student/exams/[id]`, `/student/exams/attempts/[attemptId]`, matrix navigator, KaTeX, autosave, timer, auto-submit, results & review). |
 | **Exam Engine Hardening** | **PASS** | SHORT_ANSWER confidentiality, unique answer constraint, 400ms debounce, client_version tracking, assignment policy priority, server deadline enforcement. |
 | **Exam Lifecycle Security** | **PASS** | Anti-leak verified (zero `is_correct` and `explanation` in questions snapshot), autosave persistence, idempotent scoring, 403 IDOR review protection. |

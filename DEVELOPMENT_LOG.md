@@ -419,3 +419,40 @@
   - **Documentation & Deliverables**:
     - Authored comprehensive report [docs/PHASE_6_3_6_SUBMISSION_BARRIER.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_3_6_SUBMISSION_BARRIER.md).
     - Updated `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, and `CHANGELOG.md`.
+
+## Session 18: Independent Verification (Phase 6.3.7)
+- **Timestamp**: 2026-11-19 20:00:00 - 20:12:00
+- **Action**:
+  - Conducted strict read-only audit of commit `4819937`.
+  - Confirmed Git HEAD and zero uncommitted modifications.
+  - Audited Gates A through F in detail.
+  - Identified P1-01 (Registry deletion race upon overlapping requests for the same question) and P1-02 (Backend transaction-level serialization gap on PostgreSQL).
+  - Executed full test gates (41 Pytest, 36 Playwright E2E, Next.js build, ESLint, TypeScript).
+  - Verdict: **CONDITIONAL PASS** (0 P0, 2 P1, 3 P2 test gaps).
+  - Authored comprehensive report [docs/PHASE_6_3_7_INDEPENDENT_VERIFICATION.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_3_7_INDEPENDENT_VERIFICATION.md).
+
+## Session 19: Targeted Concurrency Remediation (Phase 6.3.8)
+- **Timestamp**: 2026-11-19 20:15:00 - 20:40:00
+- **Action**:
+  - **Task A (Frontend Promise Registry Race Remediation)**:
+    - Replaced single-promise tracking with `Set<Promise<...>>` in `inFlightAutosavePromises.current`.
+    - Added identity check `if (latestInFlightByQuestion.current[questionId] === currentPromise)` before per-question cleanup.
+    - Updated Stage 3 barrier to drain via `while (inFlightAutosavePromises.current.size > 0)` awaiting all in-flight requests.
+    - Added Playwright regression Scenario 17 reproducing overlapping requests where Request A finishes before Request B, proving submission waits for B.
+  - **Task B (Backend Transaction Serialization & Row Locking)**:
+    - Added `for_update: bool = False` to `get_attempt_detail`, applying `with_for_update()` on PostgreSQL while safely executing on SQLite.
+    - Added conditional atomic touch in `autosave_answer`: `UPDATE exam_attempts SET time_spent_seconds = ... WHERE id = :id AND status = 'IN_PROGRESS'`.
+    - Added immediate `await db.flush()` after updating `attempt.status = SUBMITTED` in `submit_exam_attempt`.
+  - **Task C (Test Coverage Gaps Closed)**:
+    - Playwright Scenario 17: Regression P1-01 overlapping autosave tracking (PASS).
+    - Playwright Scenario 18: Delayed multiple-choice autosave during submit (PASS).
+    - Playwright Scenario 19: SHORT_ANSWER submit inside debounce window (PASS).
+    - Backend Pytest: Added `backend/tests/test_concurrency_remediation_638.py` (3 tests: Autosave first, Submit first, and `asyncio.gather` concurrent serialization) (PASS).
+  - **Task D (Quality Gates Execution)**:
+    - Backend Pytest: **44/44 PASSED in 14.32s (Exit code 0)**.
+    - Frontend TypeScript: **0 errors (Exit code 0)**.
+    - Frontend ESLint: **0 errors, 0 warnings (Exit code 0)**.
+    - Next.js Production Build: **23/23 routes compiled (Exit code 0)**.
+    - Playwright E2E Suite: **39/39 PASSED in 27.3s (Exit code 0)**.
+  - **Task E (Documentation)**:
+    - Authored [docs/PHASE_6_3_8_CONCURRENCY_REMEDIATION.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_3_8_CONCURRENCY_REMEDIATION.md).

@@ -5,6 +5,7 @@ test.describe("Stage A — Student Exam Interface & Lifecycle E2E (Phase 6.3)", 
   let studentEmail: string;
   const studentPassword = "StudentPassword123!";
   let studentToken: string;
+  let teacherToken: string;
   let targetExamId: string;
   let targetExamTitle: string;
   let createdAttemptId: string;
@@ -21,15 +22,44 @@ test.describe("Stage A — Student Exam Interface & Lifecycle E2E (Phase 6.3)", 
       },
     });
     expect(teacherLogin.status()).toBe(200);
-    const teacherToken = (await teacherLogin.json()).access_token;
+    teacherToken = (await teacherLogin.json()).access_token;
 
-    // Get 2 available questions
-    const qListRes = await request.get(`${API_URL}/questions?page_size=2`, {
+    // Create 2 dedicated SINGLE_CHOICE questions for this test suite
+    const q1Res = await request.post(`${API_URL}/questions`, {
       headers: { Authorization: `Bearer ${teacherToken}` },
+      data: {
+        content: `Câu hỏi trắc nghiệm A ${uniqueSuffix}`,
+        question_type: "SINGLE_CHOICE",
+        difficulty_level: "RECOGNITION",
+        subject_id: "toan-10",
+        grade_id: 10,
+        options: [
+          { option_key: "A", content: "Phương án 1", is_correct: true },
+          { option_key: "B", content: "Phương án 2", is_correct: false },
+        ],
+      },
     });
-    expect(qListRes.status()).toBe(200);
-    const qListData = await qListRes.json();
-    const qIds = qListData.items.map((q: { id: string }) => q.id);
+    expect(q1Res.status()).toBe(201);
+    const q1Id = (await q1Res.json()).id;
+
+    const q2Res = await request.post(`${API_URL}/questions`, {
+      headers: { Authorization: `Bearer ${teacherToken}` },
+      data: {
+        content: `Câu hỏi trắc nghiệm B ${uniqueSuffix}`,
+        question_type: "SINGLE_CHOICE",
+        difficulty_level: "RECOGNITION",
+        subject_id: "toan-10",
+        grade_id: 10,
+        options: [
+          { option_key: "A", content: "Phương án đúng", is_correct: true },
+          { option_key: "B", content: "Phương án sai", is_correct: false },
+        ],
+      },
+    });
+    expect(q2Res.status()).toBe(201);
+    const q2Id = (await q2Res.json()).id;
+
+    const qIds = [q1Id, q2Id];
 
     // Create exam
     const createExamRes = await request.post(`${API_URL}/exams`, {
@@ -118,7 +148,7 @@ test.describe("Stage A — Student Exam Interface & Lifecycle E2E (Phase 6.3)", 
     createdAttemptId = matches![1];
 
     // Verify Question 1 and Question Matrix are rendered
-    await expect(page.locator("text=Câu hỏi 1")).toBeVisible();
+    await expect(page.getByText("Câu hỏi 1", { exact: true })).toBeVisible();
     await expect(page.locator("text=Ma trận câu hỏi")).toBeVisible();
 
     // -------------------------------------------------------------------------
@@ -150,7 +180,7 @@ test.describe("Stage A — Student Exam Interface & Lifecycle E2E (Phase 6.3)", 
     // -------------------------------------------------------------------------
     const prevButton = page.locator("button:has-text('Câu trước')");
     await prevButton.click();
-    await expect(page.locator("text=Câu hỏi 1")).toBeVisible();
+    await expect(page.getByText("Câu hỏi 1", { exact: true })).toBeVisible();
     await expect(firstOption).toHaveClass(/border-indigo-400/);
     await expect(page.locator("text=Đã lưu máy chủ").first()).toBeVisible();
 
@@ -159,7 +189,7 @@ test.describe("Stage A — Student Exam Interface & Lifecycle E2E (Phase 6.3)", 
     // -------------------------------------------------------------------------
     await page.reload();
     await page.waitForURL(`**/student/exams/attempts/${createdAttemptId}`);
-    await expect(page.locator("text=Câu hỏi 1")).toBeVisible();
+    await expect(page.getByText("Câu hỏi 1", { exact: true })).toBeVisible();
     const restoredFirstOption = page.locator(".group.cursor-pointer").first();
     await expect(restoredFirstOption).toHaveClass(/border-indigo-400/);
     await expect(page.locator("text=Đã lưu máy chủ").first()).toBeVisible();
@@ -375,5 +405,238 @@ test.describe("Stage A — Student Exam Interface & Lifecycle E2E (Phase 6.3)", 
     const exam = exams.find((e: { id: string }) => e.id === targetExamId);
     expect(exam).toBeDefined();
     expect(exam.duration_minutes).toBe(45);
+  });
+
+  test("Scenario 17: Regression P1-01: Submission Barrier awaits overlapping autosave B when older autosave A completes first", async ({
+    page,
+    request,
+  }) => {
+    // Start fresh attempt
+    const startRes = await request.post(`${API_URL}/exams/${targetExamId}/start`, {
+      headers: { Authorization: `Bearer ${studentToken}` },
+    });
+    expect(startRes.status()).toBe(200);
+    const startData = await startRes.json();
+    const attemptId = startData.attempt_id;
+
+    // Login as student
+    await page.goto("/login");
+    await page.locator("input[type='email']").fill(studentEmail);
+    await page.locator("input[type='password']").fill(studentPassword);
+    await page.locator("button[type='submit']").click();
+    await page.waitForURL("**/student/dashboard");
+
+    await page.goto(`/student/exams/attempts/${attemptId}`);
+    await expect(page.getByText("Câu hỏi 1", { exact: true })).toBeVisible();
+
+    // Control route completion
+    let reqACallCount = 0;
+    let bCompleted = false;
+    let releaseA: () => void;
+    const promiseA = new Promise<void>((r) => {
+      releaseA = r;
+    });
+
+    let releaseB: () => void;
+    const promiseB = new Promise<void>((r) => {
+      releaseB = r;
+    });
+
+    let submitCalledBeforeB = false;
+
+    await page.route("**/api/v1/exams/attempts/**/answers/**", async (route) => {
+      reqACallCount++;
+      if (reqACallCount === 1) {
+        // Request A: hold until releaseA
+        await promiseA;
+        await route.continue();
+      } else {
+        // Request B: hold until releaseB
+        await promiseB;
+        bCompleted = true;
+        await route.continue();
+      }
+    });
+
+    await page.route("**/api/v1/exams/attempts/**/submit", async (route) => {
+      if (!bCompleted) {
+        submitCalledBeforeB = true;
+      }
+      await route.continue();
+    });
+
+    // 1. Click Option 1 (triggers Request A)
+    const opt1 = page.locator(".group.cursor-pointer").first();
+    await opt1.click();
+
+    // 2. Click Option 2 before A completes (triggers Request B)
+    const opt2 = page.locator(".group.cursor-pointer").nth(1);
+    await opt2.click();
+
+    // 3. Release Request A first
+    releaseA!();
+    await page.waitForTimeout(200);
+
+    // Request A has completed! Request B is still in flight.
+    // 4. Open submit confirmation dialog and click submit
+    const submitBtn = page.locator("button:has-text('Nộp bài')").first();
+    await submitBtn.click();
+    await expect(page.locator("h3:has-text('Xác nhận nộp bài thi')")).toBeVisible();
+
+    const confirmSubmitBtn = page.locator("button:has-text('Xác nhận nộp bài')");
+    // Verify dialog warning is visible and confirm button is initially disabled because Request B is saving
+    await expect(confirmSubmitBtn).toBeDisabled();
+
+    // 5. Now release Request B
+    releaseB!();
+
+    // After Request B completes, status updates to SAVED, submit button enables
+    await expect(confirmSubmitBtn).toBeEnabled({ timeout: 5000 });
+    await confirmSubmitBtn.click();
+
+    // 6. Verify result page is displayed
+    await expect(page.locator("h3:has-text('Bạn đã hoàn thành bài thi!')")).toBeVisible({
+      timeout: 8000,
+    });
+    // Submit was never prematurely called before B completed
+    expect(submitCalledBeforeB).toBe(false);
+  });
+
+  test("Scenario 18: Task C-1: Delayed multiple-choice autosave during submit is cleanly awaited", async ({
+    page,
+    request,
+  }) => {
+    // Start fresh attempt
+    const startRes = await request.post(`${API_URL}/exams/${targetExamId}/start`, {
+      headers: { Authorization: `Bearer ${studentToken}` },
+    });
+    expect(startRes.status()).toBe(200);
+    const startData = await startRes.json();
+    const attemptId = startData.attempt_id;
+
+    // Login as student
+    await page.goto("/login");
+    await page.locator("input[type='email']").fill(studentEmail);
+    await page.locator("input[type='password']").fill(studentPassword);
+    await page.locator("button[type='submit']").click();
+    await page.waitForURL("**/student/dashboard");
+
+    await page.goto(`/student/exams/attempts/${attemptId}`);
+    await expect(page.getByText("Câu hỏi 1", { exact: true })).toBeVisible();
+
+    let autosaveCompleted = false;
+    let submitCalledPrematurely = false;
+
+    // Simulate 500ms network delay for autosave
+    await page.route("**/api/v1/exams/attempts/**/answers/**", async (route) => {
+      await new Promise((r) => setTimeout(r, 500));
+      autosaveCompleted = true;
+      await route.continue();
+    });
+
+    await page.route("**/api/v1/exams/attempts/**/submit", async (route) => {
+      if (!autosaveCompleted) {
+        submitCalledPrematurely = true;
+      }
+      await route.continue();
+    });
+
+    // Select option
+    const opt1 = page.locator(".group.cursor-pointer").first();
+    await opt1.click();
+
+    // Immediately open submit modal
+    const submitBtn = page.locator("button:has-text('Nộp bài')").first();
+    await submitBtn.click();
+    await expect(page.locator("h3:has-text('Xác nhận nộp bài thi')")).toBeVisible();
+
+    // Confirm button should become enabled once autosave settles
+    const confirmBtn = page.locator("button:has-text('Xác nhận nộp bài')");
+    await expect(confirmBtn).toBeEnabled({ timeout: 5000 });
+    await confirmBtn.click();
+
+    // Result screen renders
+    await expect(page.locator("h3:has-text('Bạn đã hoàn thành bài thi!')")).toBeVisible({
+      timeout: 8000,
+    });
+    expect(submitCalledPrematurely).toBe(false);
+  });
+
+  test("Scenario 19: Task C-2: SHORT_ANSWER submit inside debounce window drains and persists before submission", async ({
+    page,
+    request,
+  }) => {
+    // 1. Create a dedicated exam with a SHORT_ANSWER question
+    const qRes = await request.post(`${API_URL}/questions`, {
+      headers: { Authorization: `Bearer ${teacherToken}` },
+      data: {
+        content: "Tính giá trị của 10 + 20",
+        question_type: "SHORT_ANSWER",
+        difficulty_level: "RECOGNITION",
+        subject_id: "toan-10",
+        grade_id: 10,
+        options: [{ option_key: "A", content: "30", is_correct: true }],
+      },
+    });
+    expect(qRes.status()).toBe(201);
+    const shortQId = (await qRes.json()).id;
+
+    const examRes = await request.post(`${API_URL}/exams`, {
+      headers: { Authorization: `Bearer ${teacherToken}` },
+      data: {
+        title: `Đề Short Answer Debounce Test ${Date.now()}`,
+        description: "Kiểm thử xả debounce tự luận ngắn",
+        grade_id: 10,
+        duration_minutes: 30,
+        total_points: 10.0,
+        passing_points: 5.0,
+        max_attempts: 5,
+        question_ids: [shortQId],
+      },
+    });
+    expect(examRes.status()).toBe(201);
+    const shortExamId = (await examRes.json()).id;
+
+    await request.post(`${API_URL}/exams/${shortExamId}/publish`, {
+      headers: { Authorization: `Bearer ${teacherToken}` },
+    });
+
+    // 2. Start attempt as student
+    const startRes = await request.post(`${API_URL}/exams/${shortExamId}/start`, {
+      headers: { Authorization: `Bearer ${studentToken}` },
+    });
+    expect(startRes.status()).toBe(200);
+    const attemptId = (await startRes.json()).attempt_id;
+
+    // 3. Navigate to attempt
+    await page.goto("/login");
+    await page.locator("input[type='email']").fill(studentEmail);
+    await page.locator("input[type='password']").fill(studentPassword);
+    await page.locator("button[type='submit']").click();
+    await page.waitForURL("**/student/dashboard");
+
+    await page.goto(`/student/exams/attempts/${attemptId}`);
+    await expect(page.getByText("Câu hỏi 1", { exact: true })).toBeVisible();
+
+    // 4. Type answer "30" into short answer input
+    const input = page.locator("input[placeholder*='Gõ đáp án']");
+    await expect(input).toBeVisible();
+    await input.fill("30");
+
+    // 5. IMMEDIATELY (within 50ms, well inside 400ms debounce) click "Kiểm tra & Nộp bài" / "Nộp bài"
+    const submitBtn = page.locator("button:has-text('Kiểm tra & Nộp bài'), button:has-text('Nộp bài')").first();
+    await submitBtn.click();
+    await expect(page.locator("h3:has-text('Xác nhận nộp bài thi')")).toBeVisible();
+
+    const confirmBtn = page.locator("button:has-text('Xác nhận nộp bài')");
+    await expect(confirmBtn).toBeEnabled({ timeout: 5000 });
+    await confirmBtn.click();
+
+    // 6. Verify submission succeeds and grades answer "30" correctly (+10 đ)
+    await expect(page.locator("h3:has-text('Bạn đã hoàn thành bài thi!')")).toBeVisible({
+      timeout: 8000,
+    });
+    await expect(page.locator("text=Số câu đúng")).toBeVisible();
+    await expect(page.getByText("1/1", { exact: true })).toBeVisible();
   });
 });

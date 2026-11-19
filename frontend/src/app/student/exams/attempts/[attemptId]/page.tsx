@@ -58,6 +58,9 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
   const textDebounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
   const pendingTextSaves = useRef<Record<string, { text: string; flagged?: boolean }>>({});
   const inFlightAutosavePromises = useRef<
+    Set<Promise<{ status: string; version: number }>>
+  >(new Set());
+  const latestInFlightByQuestion = useRef<
     Record<string, Promise<{ status: string; version: number }>>
   >({});
 
@@ -168,6 +171,11 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
         [questionId]: "SAVING",
       }));
 
+      let currentPromise: Promise<{ status: string; version: number }> = Promise.resolve({
+        status: "IDLE",
+        version: 0,
+      });
+
       const executeAutosave = async (): Promise<{ status: string; version: number }> => {
         try {
           const response = await examsApi.autosaveAnswer(attemptId, questionId, {
@@ -221,13 +229,19 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
           }
           return { status: "ERROR", version: clientVersion };
         } finally {
-          delete inFlightAutosavePromises.current[questionId];
+          // Identity checking: Only delete per-question tracker if it's still this exact promise
+          if (latestInFlightByQuestion.current[questionId] === currentPromise) {
+            delete latestInFlightByQuestion.current[questionId];
+          }
+          // Remove from global in-flight set
+          inFlightAutosavePromises.current.delete(currentPromise);
         }
       };
 
-      const savePromise = executeAutosave();
-      inFlightAutosavePromises.current[questionId] = savePromise;
-      return savePromise;
+      currentPromise = executeAutosave();
+      inFlightAutosavePromises.current.add(currentPromise);
+      latestInFlightByQuestion.current[questionId] = currentPromise;
+      return currentPromise;
     },
     [attempt, attemptId, selectedAnswers, startTimeRef]
   );
@@ -302,8 +316,8 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
       }
 
       // Stage 3 — Await: Wait for ALL in-flight autosave requests across ALL question types
-      const activePromises = Object.values(inFlightAutosavePromises.current);
-      if (activePromises.length > 0) {
+      while (inFlightAutosavePromises.current.size > 0) {
+        const activePromises = Array.from(inFlightAutosavePromises.current);
         await Promise.allSettled(activePromises);
       }
 

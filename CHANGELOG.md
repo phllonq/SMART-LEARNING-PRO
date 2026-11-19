@@ -1,5 +1,28 @@
 # CHANGELOG — SMART LEARNING PRO
 
+## [0.7.7] - 2026-11-19
+### Fixed & Hardened - Phase 6.3.8: Targeted Concurrency Remediation
+- **Khắc phục Race Condition trong Promise Registry Frontend (Task A / P1-01)**:
+  - Nâng cấp `inFlightAutosavePromises` sang cấu trúc `Set<Promise<...>>` theo dõi độc lập từng request qua mạng thay vì chỉ lưu 1 promise trên mỗi câu hỏi.
+  - Bổ sung cơ chế kiểm tra danh tính `latestInFlightByQuestion.current[questionId] === currentPromise` trong khối `finally` trước khi xóa registry câu hỏi.
+  - Triển khai vòng lặp chờ `while (inFlightAutosavePromises.current.size > 0)` tại Stage 3 của Submission Barrier, bảo đảm chờ đợi 100% tất cả request gối đầu nhau của cùng một câu hỏi.
+- **Tuần tự hóa Giao dịch & Khóa dòng Cấp Cơ sở Dữ liệu (Task B / P1-02)**:
+  - Bổ sung tham số `for_update=True` trong `get_attempt_detail`, kích hoạt câu lệnh `SELECT ... FOR UPDATE` trên PostgreSQL cho cả `autosave_answer` và `submit_exam_attempt`.
+  - Triển khai atomic conditional touch trong `autosave_answer`: `UPDATE exam_attempts SET time_spent_seconds = ... WHERE id = :id AND status = 'IN_PROGRESS'`. Tự động rollback và trả về `HTTP 403 Forbidden` nếu bài thi đã chuyển sang `SUBMITTED`/`GRADED`.
+  - Thực hiện `await db.flush()` ngay lập tức sau khi cập nhật `attempt.status = SUBMITTED` trong `submit_exam_attempt` để đóng cửa sổ race condition với autosave.
+- **Bổ sung Kiểm thử Tự động Chuyên biệt (Task C)**:
+  - Playwright E2E Scenario 17: Kiểm chứng rào chắn nộp bài chờ Request B hoàn tất ngay cả khi Request A của cùng câu hỏi đã hoàn tất trước (PASS).
+  - Playwright E2E Scenario 18: Kiểm chứng việc nộp bài khi có request autosave trắc nghiệm bị delay mạng 500ms (PASS).
+  - Playwright E2E Scenario 19: Kiểm chứng xả debounce tức thì và nộp bài chính xác cho câu tự luận ngắn trong khoảng thời gian < 400ms (PASS).
+  - Backend Pytest: Tạo bộ test `backend/tests/test_concurrency_remediation_638.py` (3 test cases) kiểm tra tuần tự hóa: Autosave trước Submit, Submit trước Autosave, và Concurrency Gather đồng thời (PASS).
+- **Tiêu chuẩn Chất lượng Đạt Tuyệt đối (Task D)**:
+  - Backend Pytest: **44/44 PASS trong 14.32s**.
+  - Frontend TypeScript: **0 errors** (`npx tsc --noEmit`).
+  - Frontend ESLint: **0 errors, 0 warnings** (`npm run lint`).
+  - Next.js Production Build: **23/23 routes compiled thành công**.
+  - Playwright E2E: **39/39 PASS trong 27.3s**.
+- **Báo cáo Kỹ thuật**: Tạo [docs/PHASE_6_3_8_CONCURRENCY_REMEDIATION.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_3_8_CONCURRENCY_REMEDIATION.md).
+
 ## [0.7.6] - 2026-11-19
 ### Fixed & Hardened - Phase 6.3.6: Submission Barrier & Answer Persistence Guarantee
 - **Theo dõi Tập trung Toàn bộ Tiến trình Autosave (Task A)**:

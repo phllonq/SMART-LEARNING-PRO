@@ -162,6 +162,19 @@
 - [x] Full Quality Gates Verification: Backend Pytest (41/41 PASS in 14.13s), TypeScript (0 errors), ESLint (0 errors, 0 warnings), Next.js Build (23/23 routes), Playwright E2E (36/36 PASS in 18.8s)
 - [x] Documentation: Created `docs/PHASE_6_3_6_SUBMISSION_BARRIER.md`
 
+## Phase 6.3.7: Independent Verification (Submission Barrier & Concurrency)
+- [x] Strict read-only audit of commit `4819937`
+- [x] Verdict: CONDITIONAL PASS (P0 eliminated; identified P1-01 Promise registry race & P1-02 Backend serialization gap)
+- [x] Documentation: Created `docs/PHASE_6_3_7_INDEPENDENT_VERIFICATION.md`
+
+## Phase 6.3.8: Targeted Concurrency Remediation
+- [x] Task A: Fix Frontend Promise Registry Race via identity checking and Set-based tracking (`inFlightAutosavePromises.current.delete(currentPromise)`)
+- [x] Task B: Backend Transaction Serialization via `with_for_update()`, atomic conditional touch in `autosave_answer`, and immediate status flush in `submit_exam_attempt`
+- [x] Task C: Added 3 new tests: Scenario 17 (Regression P1-01), Scenario 18 (Delayed MC autosave), Scenario 19 (SHORT_ANSWER debounce drain) in Playwright suite
+- [x] Task C: Added 3 backend serialization tests in `backend/tests/test_concurrency_remediation_638.py` (Autosave first, Submit first, and Gather concurrent)
+- [x] Task D: Full Quality Gates Verification: Pytest (44/44 PASS in 14.32s), TypeScript (0 errors), ESLint (0 errors, 0 warnings), Next.js Build (23/23 routes), Playwright E2E (39/39 PASS in 27.3s)
+- [x] Task E: Documentation: Created `docs/PHASE_6_3_8_CONCURRENCY_REMEDIATION.md`
+
 ## Phase 7: AI Engine (Next Phase)
 - [ ] Gemini API integration for automated question diagnosis
 - [ ] Socratic AI Tutor interactive chat

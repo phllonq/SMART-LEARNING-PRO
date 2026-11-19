@@ -501,7 +501,12 @@ async def start_exam_attempt(
     return loaded_attempt, sanitized_snapshot
 
 
-async def get_attempt_detail(db: AsyncSession, attempt_id: str, user: User) -> Tuple[ExamAttempt, List[Dict[str, Any]]]:
+async def get_attempt_detail(
+    db: AsyncSession,
+    attempt_id: str,
+    user: User,
+    for_update: bool = False
+) -> Tuple[ExamAttempt, List[Dict[str, Any]]]:
     """Retrieve attempt content. Enforces ownership and answer confidentiality."""
     query = (
         select(ExamAttempt)
@@ -513,6 +518,8 @@ async def get_attempt_detail(db: AsyncSession, attempt_id: str, user: User) -> T
             selectinload(ExamAttempt.result)
         )
     )
+    if for_update:
+        query = query.with_for_update()
     res = await db.execute(query)
     attempt = res.scalar_one_or_none()
     if not attempt:
@@ -543,7 +550,7 @@ async def autosave_answer(
     - Returns (status, answer) where status is:
       'SAVED', 'STALE_IGNORED', or 'VERSION_CONFLICT'.
     """
-    attempt, snapshot = await get_attempt_detail(db, attempt_id, user=student)
+    attempt, snapshot = await get_attempt_detail(db, attempt_id, user=student, for_update=True)
     if attempt.student_id != student.id:
         raise PermissionDeniedException("Bạn không phải chủ sở hữu của bài thi này.")
 
@@ -561,6 +568,23 @@ async def autosave_answer(
     valid_q_ids = [q["question_id"] for q in snapshot]
     if question_id not in valid_q_ids:
         raise EntityNotFoundException("Question in Attempt", question_id)
+
+    # Ensure attempt status is still IN_PROGRESS and atomically touch ExamAttempt
+    stmt_touch = (
+        update(ExamAttempt)
+        .where(
+            ExamAttempt.id == attempt_id,
+            ExamAttempt.status == AttemptStatus.IN_PROGRESS.value
+        )
+        .values(time_spent_seconds=max(attempt.time_spent_seconds, data.time_spent_seconds))
+    )
+    touch_res = await db.execute(stmt_touch)
+    if touch_res.rowcount == 0:
+        await db.rollback()
+        cur_status = (await db.execute(
+            select(ExamAttempt.status).where(ExamAttempt.id == attempt_id)
+        )).scalar_one_or_none()
+        raise PermissionDeniedException(f"Bài thi này đã nộp hoặc kết thúc (Trạng thái: {cur_status}). Không thể lưu thêm đáp án.")
 
     # Find existing answer or create new
     existing_query = select(StudentAnswer).where(
@@ -662,7 +686,7 @@ async def submit_exam_attempt(
     - Server-side calculation of score, percentage, pass/fail.
     - Never trusts client-submitted scores.
     """
-    attempt, snapshot = await get_attempt_detail(db, attempt_id, user=user)
+    attempt, snapshot = await get_attempt_detail(db, attempt_id, user=user, for_update=True)
 
     # Determine assignment vs standalone review and deadline policies
     if attempt.assignment_id and attempt.assignment:
@@ -721,6 +745,9 @@ async def submit_exam_attempt(
     started_utc = ensure_utc(attempt.started_at)
     time_spent = int((now - started_utc).total_seconds()) if started_utc else 0
     attempt.time_spent_seconds = max(0, time_spent)
+
+    # Immediately flush status transition so any concurrent autosaves observe the closed state
+    await db.flush()
 
     # 2. Server-side Automatic Grading
     # Decode immutable answer key snapshot if available
