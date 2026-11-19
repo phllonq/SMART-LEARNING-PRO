@@ -147,6 +147,21 @@
 - [x] Full Quality Gates Verification: Pytest (39/39 PASS in 8.93s), TypeScript (0 errors), ESLint (0 errors, 0 warnings), Next.js Build (23/23 routes), Playwright E2E (36/36 PASS in 16.0s)
 - [x] Documentation: Created `docs/PHASE_6_3_4_AUTOSAVE_REMEDIATION.md`
 
+## Phase 6.3.5: Independent Concurrency & Submission Verification
+- [x] Read-only verification of autosave concurrency, transaction safety, and submit integrity
+- [x] Identified P0 finding at Gate E: Submit executes while autosave requests are pending, failed, or conflicted without validation barrier
+- [x] Documentation: Created `docs/PHASE_6_3_5_INDEPENDENT_VERIFICATION.md`
+
+## Phase 6.3.6: Submission Barrier & Answer Persistence Guarantee
+- [x] Task A: Centralized autosave tracking via `inFlightAutosavePromises.current` covering single, multiple, true/false, and short answer
+- [x] Task B: 6-Stage Submission Barrier (`handleFinalSubmit`): Freeze UI -> Flush debounces -> Await all in-flight promises -> Validate 100% answers SAVED -> Submit -> Unlock on failure
+- [x] Task B: Disable interactive answer modifications during submission (`disabled={isSubmitting}`) and disable submit confirmation button when unresolved issues exist
+- [x] Task C: Backend submission safety verification: student ownership, server deadline check, post-submit autosave rejection (HTTP 403)
+- [x] Task D: Added concurrent initial insert test `test_concurrent_first_insert_race_condition` (PASS) and post-submit rejection test `test_post_submit_autosave_rejected` (PASS)
+- [x] Task D: Updated Playwright E2E Scenario 15 proving submit barrier blocks submission and keeps submit endpoint uncalled on network failure
+- [x] Full Quality Gates Verification: Backend Pytest (41/41 PASS in 14.13s), TypeScript (0 errors), ESLint (0 errors, 0 warnings), Next.js Build (23/23 routes), Playwright E2E (36/36 PASS in 18.8s)
+- [x] Documentation: Created `docs/PHASE_6_3_6_SUBMISSION_BARRIER.md`
+
 ## Phase 7: AI Engine (Next Phase)
 - [ ] Gemini API integration for automated question diagnosis
 - [ ] Socratic AI Tutor interactive chat

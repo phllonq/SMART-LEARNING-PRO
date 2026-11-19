@@ -379,3 +379,43 @@
   - **Documentation & Deliverables**:
     - Authored comprehensive report [docs/PHASE_6_3_4_AUTOSAVE_REMEDIATION.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_3_4_AUTOSAVE_REMEDIATION.md).
     - Updated `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, and `CHANGELOG.md`.
+
+## Session 16: Independent Concurrency & Submission Verification (Phase 6.3.5)
+- **Timestamp**: 2026-11-19 18:45:00 - 18:52:00
+- **Action**:
+  - Conducted an independent, read-only technical audit of Phase 6.3.4 autosave remediation.
+  - Inspected OCC database conditional updates, session rollback behavior, and frontend state synchronization.
+  - Discovered critical submission integrity flaw at Gate E:
+    - `handleFinalSubmit` executed `Promise.allSettled(flushPromises)` without checking results.
+    - Floating in-flight autosave requests for choice questions were untracked and unawaited.
+    - Submit was allowed while questions were in `SAVING`, `CONFLICT`, or `ERROR` states, exposing students to silent answer loss if submit completed before in-flight autosave reached backend.
+  - Verdict: **FAIL** (as mandated by Gate E acceptance condition).
+  - Authored comprehensive audit report [docs/PHASE_6_3_5_INDEPENDENT_VERIFICATION.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_3_5_INDEPENDENT_VERIFICATION.md).
+
+## Session 17: Submission Barrier & Answer Persistence Guarantee (Phase 6.3.6)
+- **Timestamp**: 2026-11-19 18:55:00 - 19:10:00
+- **Action**:
+  - **Frontend Centralized Autosave Tracking**:
+    - Tracked in-flight autosave promises in `inFlightAutosavePromises.current` across all question types (`SINGLE_CHOICE`, `MULTIPLE_CHOICE`, `TRUE_FALSE`, `SHORT_ANSWER`).
+    - Handled promise resolution/cleanup in `executeAutosave().finally()`.
+  - **6-Stage Submission Barrier (`handleFinalSubmit`)**:
+    - Stage 1 Freeze: Locks UI (`isSubmitting = true`, disabling inputs, options, and anti-double-click).
+    - Stage 2 Flush: Drains all debounced text inputs immediately.
+    - Stage 3 Await: Waits for all active in-flight promises via `Promise.allSettled`.
+    - Stage 4 Validate: Scans all answered questions; verifies 100% are confirmed `SAVED`; halts if any question is `SAVING`, `CONFLICT`, `ERROR`, or unpersisted.
+    - Stage 5 Submit: Calls `examsApi.submitAttempt(attemptId)` only when 100% answers are validated.
+    - Stage 6 Unlock: On validation failure or submit error, unlocks UI (`isSubmitting = false`), keeps local answers intact, and displays actionable error messages.
+    - Dialog Barrier: Submit confirmation button disabled if `hasUnresolvedIssues` (`isAnyConflict || isAnyError || isAnySaving`).
+  - **Backend Safety & Tests**:
+    - Added `test_concurrent_first_insert_race_condition` to `backend/tests/test_autosave_remediation_634.py` using `asyncio.gather`.
+    - Added `test_post_submit_autosave_rejected` verifying HTTP 403 on post-submit autosaves.
+    - Updated Playwright E2E Scenario 15 proving submission barrier blocks submission on simulated network errors without calling submit API.
+  - **Quality Gates Execution**:
+    - Pytest backend test suite: **41/41 PASSED in 14.13s (Exit code 0)**.
+    - TypeScript compiler check: **0 errors (Exit code 0)**.
+    - ESLint: **0 errors, 0 warnings (Exit code 0)**.
+    - Next.js Production Build: **23/23 routes compiled (Exit code 0)**.
+    - Playwright E2E Suite: **36/36 PASSED in 18.8s (Exit code 0)**.
+  - **Documentation & Deliverables**:
+    - Authored comprehensive report [docs/PHASE_6_3_6_SUBMISSION_BARRIER.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_3_6_SUBMISSION_BARRIER.md).
+    - Updated `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, and `CHANGELOG.md`.

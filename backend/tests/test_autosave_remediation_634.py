@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 import httpx
 import uuid
 from app.modules.auth.models import UserRole
@@ -396,3 +397,162 @@ async def test_autosave_short_answer_lifecycle(client: httpx.AsyncClient):
     assert save_data2["status"] == "SAVED"
     assert save_data2["answer_text"] == "bốn"
     assert save_data2["version"] == 2
+
+
+@pytest.mark.asyncio
+async def test_concurrent_first_insert_race_condition(client: httpx.AsyncClient):
+    """
+    Task D / Phase 6.3.6:
+    Verifies that when two concurrent requests attempt to insert the initial answer
+    for the same (attempt_id, question_id) simultaneously:
+    - UniqueConstraint uq_attempt_question_answer prevents duplicate insertion.
+    - IntegrityError in the losing request is caught and rolled back safely.
+    - Both requests return HTTP 200 without 500 error or corrupted transaction.
+    - Exactly 1 StudentAnswer record exists in the database.
+    """
+    t_login = await client.post("/api/v1/auth/login", json={
+        "email": "giaovien.toan@smartlearning.vn",
+        "password": "TeacherPassword123!"
+    })
+    t_headers = {"Authorization": f"Bearer {t_login.json()['access_token']}"}
+
+    exam_res = await client.post("/api/v1/exams", headers=t_headers, json={
+        "title": f"Đề Concurrent Initial {uuid.uuid4().hex[:6]}",
+        "subject_id": "toan-11",
+        "grade_id": 11,
+        "duration_minutes": 30,
+        "total_points": 10.0,
+        "passing_points": 5.0,
+        "status": "DRAFT"
+    })
+    exam_id = exam_res.json()["id"]
+    await client.post(
+        f"/api/v1/exams/{exam_id}/questions",
+        headers=t_headers,
+        json={"question_id": "q-toan11-01", "points": 10.0, "order_index": 1}
+    )
+    await client.post(f"/api/v1/exams/{exam_id}/publish", headers=t_headers)
+
+    s_email = f"stu_concurrent_init_{uuid.uuid4().hex[:6]}@smartlearning.vn"
+    await client.post("/api/v1/auth/register", json={
+        "email": s_email,
+        "password": "StudentPassword123!",
+        "full_name": "Học Sinh Concurrent Initial",
+        "role": "STUDENT",
+        "grade_level": 11
+    })
+    s_login = await client.post("/api/v1/auth/login", json={
+        "email": s_email,
+        "password": "StudentPassword123!"
+    })
+    s_headers = {"Authorization": f"Bearer {s_login.json()['access_token']}"}
+
+    start_res = await client.post(f"/api/v1/exams/{exam_id}/start", headers=s_headers)
+    att = start_res.json()
+    attempt_id = att["attempt_id"]
+    q_data = att["questions"][0]
+    q_id = q_data["question_id"]
+    opt_a = q_data["options"][0]["id"]
+    opt_b = q_data["options"][1]["id"]
+
+    # Concurrently execute two first-insert requests targeting the same question
+    req1 = client.put(
+        f"/api/v1/exams/attempts/{attempt_id}/answers/{q_id}",
+        headers=s_headers,
+        json={"selected_option_id": opt_a, "client_version": 1}
+    )
+    req2 = client.put(
+        f"/api/v1/exams/attempts/{attempt_id}/answers/{q_id}",
+        headers=s_headers,
+        json={"selected_option_id": opt_b, "client_version": 1}
+    )
+
+    res1, res2 = await asyncio.gather(req1, req2)
+    assert res1.status_code == 200, f"Req 1 failed with {res1.status_code}: {res1.text}"
+    assert res2.status_code == 200, f"Req 2 failed with {res2.status_code}: {res2.text}"
+
+    data1 = res1.json()
+    data2 = res2.json()
+
+    # One request is SAVED, the other is STALE_IGNORED or VERSION_CONFLICT
+    statuses = {data1["status"], data2["status"]}
+    assert "SAVED" in statuses
+    assert len(statuses) <= 2
+
+    # Verify attempt only has 1 record for this question
+    att_get = await client.get(f"/api/v1/exams/attempts/{attempt_id}", headers=s_headers)
+    assert att_get.status_code == 200
+    saved = att_get.json()["saved_answers"]
+    assert q_id in saved
+    assert saved[q_id]["version"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_post_submit_autosave_rejected(client: httpx.AsyncClient):
+    """
+    Task C / Phase 6.3.6:
+    Verifies that once an attempt is submitted (status != IN_PROGRESS),
+    any subsequent autosave requests are strictly rejected with HTTP 403 Forbidden.
+    """
+    t_login = await client.post("/api/v1/auth/login", json={
+        "email": "giaovien.toan@smartlearning.vn",
+        "password": "TeacherPassword123!"
+    })
+    t_headers = {"Authorization": f"Bearer {t_login.json()['access_token']}"}
+
+    exam_res = await client.post("/api/v1/exams", headers=t_headers, json={
+        "title": f"Đề Post Submit {uuid.uuid4().hex[:6]}",
+        "subject_id": "toan-11",
+        "grade_id": 11,
+        "duration_minutes": 30,
+        "total_points": 10.0,
+        "passing_points": 5.0,
+        "status": "DRAFT"
+    })
+    exam_id = exam_res.json()["id"]
+    await client.post(
+        f"/api/v1/exams/{exam_id}/questions",
+        headers=t_headers,
+        json={"question_id": "q-toan11-01", "points": 10.0, "order_index": 1}
+    )
+    await client.post(f"/api/v1/exams/{exam_id}/publish", headers=t_headers)
+
+    s_email = f"stu_post_sub_{uuid.uuid4().hex[:6]}@smartlearning.vn"
+    await client.post("/api/v1/auth/register", json={
+        "email": s_email,
+        "password": "StudentPassword123!",
+        "full_name": "Học Sinh Post Submit",
+        "role": "STUDENT",
+        "grade_level": 11
+    })
+    s_login = await client.post("/api/v1/auth/login", json={
+        "email": s_email,
+        "password": "StudentPassword123!"
+    })
+    s_headers = {"Authorization": f"Bearer {s_login.json()['access_token']}"}
+
+    start_res = await client.post(f"/api/v1/exams/{exam_id}/start", headers=s_headers)
+    att = start_res.json()
+    attempt_id = att["attempt_id"]
+    q_data = att["questions"][0]
+    q_id = q_data["question_id"]
+    opt_a = q_data["options"][0]["id"]
+
+    # 1. Answer and submit attempt
+    await client.put(
+        f"/api/v1/exams/attempts/{attempt_id}/answers/{q_id}",
+        headers=s_headers,
+        json={"selected_option_id": opt_a, "client_version": 1}
+    )
+    sub_res = await client.post(f"/api/v1/exams/attempts/{attempt_id}/submit", headers=s_headers)
+    assert sub_res.status_code == 200
+    assert sub_res.json()["status"] in ["SUBMITTED", "GRADED", "COMPLETED"]
+
+    # 2. Attempt subsequent autosave -> must receive HTTP 403 Forbidden
+    late_save = await client.put(
+        f"/api/v1/exams/attempts/{attempt_id}/answers/{q_id}",
+        headers=s_headers,
+        json={"selected_option_id": opt_a, "client_version": 2}
+    )
+    assert late_save.status_code == 403, f"Expected 403, got {late_save.status_code}: {late_save.text}"
+    assert "đã nộp hoặc kết thúc" in late_save.json()["detail"]

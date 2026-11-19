@@ -1,5 +1,36 @@
 # CHANGELOG — SMART LEARNING PRO
 
+## [0.7.6] - 2026-11-19
+### Fixed & Hardened - Phase 6.3.6: Submission Barrier & Answer Persistence Guarantee
+- **Theo dõi Tập trung Toàn bộ Tiến trình Autosave (Task A)**:
+  - Khởi tạo ref map `inFlightAutosavePromises.current` lưu trữ toàn bộ Promise autosave đang thực thi qua mạng của tất cả dạng câu hỏi (`SINGLE_CHOICE`, `MULTIPLE_CHOICE`, `TRUE_FALSE`, `SHORT_ANSWER`).
+  - Hàm `handleSaveAnswer` trả về Promise đang chạy và tự động dọn dẹp khỏi registry trong khối `finally`.
+  - Khắc phục triệt để lỗ hổng trước đây khi các câu trắc nghiệm click tức thì không được theo dõi và có thể bị ngắt khi nộp bài.
+- **Rào chắn Nộp bài 6 Giai đoạn (6-Stage Submission Barrier - Task B)**:
+  - Triển khai quy trình nộp bài nghiêm ngặt trong `handleFinalSubmit`:
+    1. *Stage 1 Freeze*: Kích hoạt `isSubmitting = true`, xóa bỏ thông báo lỗi cũ.
+    2. *Stage 2 Flush*: Xả toàn bộ bộ đệm debounce câu hỏi tự luận ngắn (`flushPendingTextAutosaves`).
+    3. *Stage 3 Await*: Chờ 100% request autosave đang bay qua mạng hoàn tất bằng `Promise.allSettled(Object.values(inFlightAutosavePromises.current))`.
+    4. *Stage 4 Validate*: Quét toàn bộ câu hỏi đã làm; từ chối nộp bài ngay lập tức nếu còn bất kỳ câu nào ở trạng thái `SAVING`, `CONFLICT`, hoặc `ERROR`.
+    5. *Stage 5 Submit*: Chỉ gọi `examsApi.submitAttempt(attemptId)` khi toàn bộ câu hỏi đã làm đạt trạng thái xác nhận `SAVED` trên DB.
+    6. *Stage 6 Unlock*: Mở khóa giao diện và giữ nguyên đáp án học sinh nếu xảy ra lỗi mạng hoặc từ chối hợp lệ.
+- **Bảo vệ Giao diện & Modal Nộp bài (Frontend UI Protection - Task B)**:
+  - Khóa toàn bộ tương tác người dùng (vô hiệu hóa click lựa chọn, input text) khi `isSubmitting = true` để tránh phát sinh thay đổi trong lúc nộp.
+  - Vô hiệu hóa nút "Xác nhận nộp bài" trong modal nộp bài khi hệ thống đang lưu (`isAnySaving`), có xung đột (`isAnyConflict`), hoặc lỗi kết nối (`isAnyError`).
+  - Hiển thị banner cảnh báo màu hổ phách trong modal nộp bài chỉ rõ câu hỏi đang gặp vấn đề để học sinh bấm thử lại trước khi nộp.
+- **Kiểm thử Hồi quy Backend & Tính Toàn vẹn Giao dịch (Task C & D)**:
+  - Bổ sung kiểm thử race condition chèn đồng thời lần đầu: `test_concurrent_first_insert_race_condition` (`backend/tests/test_autosave_remediation_634.py`) bằng `asyncio.gather`.
+  - Bổ sung kiểm thử từ chối autosave sau khi nộp bài: `test_post_submit_autosave_rejected` xác nhận máy chủ trả về `HTTP 403 Forbidden` (`PermissionDeniedException`) khi attempt đã `SUBMITTED`.
+- **Kiểm thử E2E Playwright Kịch bản 15 (Task D)**:
+  - Cập nhật Kịch bản 15 trong `frontend/e2e/exam-lifecycle.spec.ts` kiểm chứng rào chắn nộp bài khi gặp lỗi mạng mô phỏng: hiển thị trạng thái lỗi, vô hiệu hóa nút nộp bài trong dialog, và ngăn chặn việc gọi API nộp bài.
+- **Tiêu chuẩn Chất lượng Đạt Tuyệt đối (Task E)**:
+  - Backend Pytest: **41/41 PASS trong 14.13s**.
+  - Frontend TypeScript: **0 errors** (`npx tsc --noEmit`).
+  - Frontend ESLint: **0 errors, 0 warnings** (`npm run lint`).
+  - Next.js Production Build: **23/23 routes compiled thành công**.
+  - Playwright E2E: **36/36 PASS trong 18.8s**.
+- **Báo cáo Kỹ thuật**: Tạo [docs/PHASE_6_3_6_SUBMISSION_BARRIER.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_3_6_SUBMISSION_BARRIER.md).
+
 ## [0.7.5] - 2026-11-19
 ### Fixed & Hardened - Phase 6.3.4: Autosave Versioning & Data Consistency Remediation
 - **Khôi phục Phiên bản khi Tải lại Trang (Task A)**:

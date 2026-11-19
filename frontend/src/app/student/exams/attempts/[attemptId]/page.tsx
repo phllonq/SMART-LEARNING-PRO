@@ -57,6 +57,9 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
   const versionCounters = useRef<Record<string, number>>({});
   const textDebounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
   const pendingTextSaves = useRef<Record<string, { text: string; flagged?: boolean }>>({});
+  const inFlightAutosavePromises = useRef<
+    Record<string, Promise<{ status: string; version: number }>>
+  >({});
 
   // Clean up debounce timers on unmount
   useEffect(() => {
@@ -116,16 +119,18 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
     [localSaveStatuses, attempt?.saved_answers]
   );
 
-  // Safe Autosave Handler with atomic OCC versioning
+  // Safe Autosave Handler with atomic OCC versioning & centralized promise tracking
   const handleSaveAnswer = useCallback(
-    async (
+    (
       questionId: string,
       optionId?: string | null,
       optionIds?: string[] | null,
       text?: string | null,
       flagged?: boolean
-    ) => {
-      if (!attempt || attempt.status !== "IN_PROGRESS") return;
+    ): Promise<{ status: string; version: number }> => {
+      if (!attempt || attempt.status !== "IN_PROGRESS") {
+        return Promise.resolve({ status: "IDLE", version: 0 });
+      }
 
       // Base version from versionCounters or server saved_answers
       const baseVersion = Math.max(
@@ -163,52 +168,66 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
         [questionId]: "SAVING",
       }));
 
-      try {
-        const response = await examsApi.autosaveAnswer(attemptId, questionId, {
-          selected_option_id: newAnswer.selected_option_id,
-          selected_option_ids: newAnswer.selected_option_ids,
-          answer_text: newAnswer.answer_text,
-          is_flagged: newAnswer.is_flagged,
-          time_spent_seconds: newAnswer.time_spent_seconds,
-          client_version: clientVersion,
-          expected_version: expectedVersion,
-        });
+      const executeAutosave = async (): Promise<{ status: string; version: number }> => {
+        try {
+          const response = await examsApi.autosaveAnswer(attemptId, questionId, {
+            selected_option_id: newAnswer.selected_option_id,
+            selected_option_ids: newAnswer.selected_option_ids,
+            answer_text: newAnswer.answer_text,
+            is_flagged: newAnswer.is_flagged,
+            time_spent_seconds: newAnswer.time_spent_seconds,
+            client_version: clientVersion,
+            expected_version: expectedVersion,
+          });
 
-        // Sync authoritative version from server
-        if (response.version && response.version > (versionCounters.current[questionId] || 0)) {
-          versionCounters.current[questionId] = response.version;
-        }
+          // Sync authoritative version from server
+          if (response.version && response.version > (versionCounters.current[questionId] || 0)) {
+            versionCounters.current[questionId] = response.version;
+          }
 
-        // Only update UI status if this response corresponds to the latest requested version
-        if (
-          versionCounters.current[questionId] === response.version ||
-          versionCounters.current[questionId] === clientVersion
-        ) {
-          if (response.status === "SAVED") {
-            setLocalSaveStatuses((prev) => ({
-              ...prev,
-              [questionId]: "SAVED",
-            }));
-          } else if (response.status === "VERSION_CONFLICT" || response.status === "STALE_IGNORED") {
-            setLocalSaveStatuses((prev) => ({
-              ...prev,
-              [questionId]: "CONFLICT",
-            }));
-          } else {
+          // Only update UI status if this response corresponds to the latest requested version
+          if (
+            versionCounters.current[questionId] === response.version ||
+            versionCounters.current[questionId] === clientVersion
+          ) {
+            if (response.status === "SAVED") {
+              setLocalSaveStatuses((prev) => ({
+                ...prev,
+                [questionId]: "SAVED",
+              }));
+            } else if (
+              response.status === "VERSION_CONFLICT" ||
+              response.status === "STALE_IGNORED"
+            ) {
+              setLocalSaveStatuses((prev) => ({
+                ...prev,
+                [questionId]: "CONFLICT",
+              }));
+            } else {
+              setLocalSaveStatuses((prev) => ({
+                ...prev,
+                [questionId]: "ERROR",
+              }));
+            }
+          }
+
+          return { status: response.status, version: response.version };
+        } catch {
+          if (versionCounters.current[questionId] === clientVersion) {
             setLocalSaveStatuses((prev) => ({
               ...prev,
               [questionId]: "ERROR",
             }));
           }
+          return { status: "ERROR", version: clientVersion };
+        } finally {
+          delete inFlightAutosavePromises.current[questionId];
         }
-      } catch {
-        if (versionCounters.current[questionId] === clientVersion) {
-          setLocalSaveStatuses((prev) => ({
-            ...prev,
-            [questionId]: "ERROR",
-          }));
-        }
-      }
+      };
+
+      const savePromise = executeAutosave();
+      inFlightAutosavePromises.current[questionId] = savePromise;
+      return savePromise;
     },
     [attempt, attemptId, selectedAnswers, startTimeRef]
   );
@@ -216,6 +235,8 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
   // Debounced Short Answer text handler (400ms debounce)
   const handleTextChange = useCallback(
     (questionId: string, text: string) => {
+      if (isSubmitting) return;
+
       const existing = selectedAnswers[questionId] || {
         is_flagged: false,
         time_spent_seconds: 0,
@@ -259,38 +280,94 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
         );
       }, 400);
     },
-    [handleSaveAnswer, selectedAnswers, startTimeRef]
+    [handleSaveAnswer, isSubmitting, selectedAnswers, startTimeRef]
   );
 
-  // Submit Attempt
+  // Submission Barrier: Flush, Await, Validate, and Submit Execution
   const handleFinalSubmit = useCallback(async () => {
+    // Stage 1 — Freeze: Prevent double-click or simultaneous submissions
     if (isSubmitting) return;
     setIsSubmitting(true);
     setSubmitError(null);
 
-    // Drain/flush any pending debounced autosaves before final submission
-    const flushPromises: Promise<unknown>[] = [];
-    for (const [qid, pending] of Object.entries(pendingTextSaves.current)) {
-      if (textDebounceTimers.current[qid]) {
-        clearTimeout(textDebounceTimers.current[qid]);
-        delete textDebounceTimers.current[qid];
-      }
-      delete pendingTextSaves.current[qid];
-      flushPromises.push(
-        handleSaveAnswer(qid, undefined, undefined, pending.text, pending.flagged)
-      );
-    }
-    if (flushPromises.length > 0) {
-      await Promise.allSettled(flushPromises);
-    }
-
     try {
+      // Stage 2 — Flush: Drain all pending debounce queues immediately
+      for (const [qid, pending] of Object.entries(pendingTextSaves.current)) {
+        if (textDebounceTimers.current[qid]) {
+          clearTimeout(textDebounceTimers.current[qid]);
+          delete textDebounceTimers.current[qid];
+        }
+        delete pendingTextSaves.current[qid];
+        handleSaveAnswer(qid, undefined, undefined, pending.text, pending.flagged);
+      }
+
+      // Stage 3 — Await: Wait for ALL in-flight autosave requests across ALL question types
+      const activePromises = Object.values(inFlightAutosavePromises.current);
+      if (activePromises.length > 0) {
+        await Promise.allSettled(activePromises);
+      }
+
+      // Stage 4 — Validate: Verify every answered question is persisted and confirmed SAVED
+      const questionsList = attempt?.questions || [];
+      const failedQuestions: { index: number; reason: string }[] = [];
+
+      for (let i = 0; i < questionsList.length; i++) {
+        const q = questionsList[i];
+        const qid = q.question_id;
+        const ans = selectedAnswers[qid];
+
+        // Check if question has been answered (choice selected or text provided)
+        const isAnswered =
+          !!ans?.selected_option_id ||
+          (ans?.selected_option_ids && ans.selected_option_ids.length > 0) ||
+          (typeof ans?.answer_text === "string" && ans.answer_text.trim().length > 0);
+
+        if (isAnswered) {
+          const status = getSaveStatus(qid);
+          if (status === "SAVING") {
+            failedQuestions.push({
+              index: i + 1,
+              reason: "Vẫn đang được lưu vào máy chủ",
+            });
+          } else if (status === "CONFLICT") {
+            failedQuestions.push({
+              index: i + 1,
+              reason: "Xung đột phiên bản",
+            });
+          } else if (status === "ERROR") {
+            failedQuestions.push({
+              index: i + 1,
+              reason: "Lỗi kết nối khi lưu",
+            });
+          } else if (status !== "SAVED") {
+            failedQuestions.push({
+              index: i + 1,
+              reason: "Chưa xác nhận lưu thành công",
+            });
+          }
+        }
+      }
+
+      // If any answered question failed validation, DO NOT SUBMIT!
+      if (failedQuestions.length > 0) {
+        const errorDetails = failedQuestions
+          .map((f) => `Câu ${f.index} (${f.reason})`)
+          .join(", ");
+        setSubmitError(
+          `Không thể nộp bài do một số câu trả lời chưa được lưu thành công trên máy chủ: ${errorDetails}. Vui lòng kiểm tra và bấm "Thử lại" trên các câu hỏi bị lỗi trước khi nộp bài.`
+        );
+        setIsSubmitting(false); // Stage 6 — Unlock on validation failure
+        return;
+      }
+
+      // Stage 5 — Submit: Guaranteed that all valid answers are persisted as SAVED
       const result = await examsApi.submitAttempt(attemptId);
       setSubmitResult(result);
       setIsSubmitModalOpen(false);
       queryClient.invalidateQueries({ queryKey: ["student-attempt", attemptId] });
       queryClient.invalidateQueries({ queryKey: ["student-available-exams"] });
     } catch (err: unknown) {
+      // Stage 6 — Unlock on submit API error
       setIsSubmitting(false);
       const apiErr = err as {
         status?: number;
@@ -305,7 +382,15 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
           "Không thể nộp bài thi. Vui lòng thử lại."
       );
     }
-  }, [attemptId, isSubmitting, queryClient, handleSaveAnswer]);
+  }, [
+    attempt,
+    attemptId,
+    getSaveStatus,
+    handleSaveAnswer,
+    isSubmitting,
+    queryClient,
+    selectedAnswers,
+  ]);
 
   // If attempt was already submitted/graded before opening, fetch review or submit result
   useEffect(() => {
@@ -665,9 +750,15 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
       selectedAnswers[q.question_id]?.selected_option_id ||
       (selectedAnswers[q.question_id]?.selected_option_ids &&
         selectedAnswers[q.question_id].selected_option_ids!.length > 0) ||
-      selectedAnswers[q.question_id]?.answer_text
+      (typeof selectedAnswers[q.question_id]?.answer_text === "string" &&
+        selectedAnswers[q.question_id].answer_text!.trim().length > 0)
   ).length;
   const unansweredCount = totalQuestions - answeredCount;
+
+  const isAnySaving = Object.values(localSaveStatuses).some((s) => s === "SAVING");
+  const isAnyConflict = Object.values(localSaveStatuses).some((s) => s === "CONFLICT");
+  const isAnyError = Object.values(localSaveStatuses).some((s) => s === "ERROR");
+  const hasUnresolvedIssues = isAnyConflict || isAnyError || isAnySaving;
 
   // Active Save Status text & icon
   const renderSaveStatus = () => {
@@ -806,6 +897,7 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
                   <Button
                     variant={isFlagged ? "default" : "outline"}
                     size="sm"
+                    disabled={isSubmitting}
                     onClick={() => handleToggleFlag(currentQId)}
                     className={`h-8 gap-1.5 text-xs ${
                       isFlagged
@@ -835,16 +927,19 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
                     return (
                       <div
                         key={opt.id}
-                        onClick={() =>
+                        onClick={() => {
+                          if (isSubmitting) return;
                           handleSaveAnswer(
                             currentQId,
                             opt.id,
                             undefined,
                             undefined,
                             currentSaved?.is_flagged
-                          )
-                        }
-                        className={`group flex items-start gap-3.5 p-3.5 sm:p-4 rounded-xl border cursor-pointer transition-all ${
+                          );
+                        }}
+                        className={`group flex items-start gap-3.5 p-3.5 sm:p-4 rounded-xl border transition-all ${
+                          isSubmitting ? "cursor-not-allowed opacity-75" : "cursor-pointer"
+                        } ${
                           isSelected
                             ? "bg-indigo-50/80 border-indigo-400 text-indigo-950 ring-2 ring-indigo-200/50 shadow-2xs"
                             : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/60 text-slate-800"
@@ -871,6 +966,7 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
                     const isChecked = currentSelectedIds.includes(opt.id);
 
                     const toggleOption = () => {
+                      if (isSubmitting) return;
                       const updated = isChecked
                         ? currentSelectedIds.filter((id: string) => id !== opt.id)
                         : [...currentSelectedIds, opt.id];
@@ -887,7 +983,9 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
                       <div
                         key={opt.id}
                         onClick={toggleOption}
-                        className={`group flex items-start gap-3.5 p-3.5 sm:p-4 rounded-xl border cursor-pointer transition-all ${
+                        className={`group flex items-start gap-3.5 p-3.5 sm:p-4 rounded-xl border transition-all ${
+                          isSubmitting ? "cursor-not-allowed opacity-75" : "cursor-pointer"
+                        } ${
                           isChecked
                             ? "bg-indigo-50/80 border-indigo-400 text-indigo-950 ring-2 ring-indigo-200/50 shadow-2xs"
                             : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/60 text-slate-800"
@@ -915,10 +1013,11 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
                     </label>
                     <input
                       type="text"
+                      disabled={isSubmitting}
                       value={currentSaved?.answer_text || ""}
                       onChange={(e) => handleTextChange(currentQId, e.target.value)}
                       placeholder="Gõ đáp án của bạn tại đây..."
-                      className="w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-indigo-500 focus:outline-hidden focus:ring-2 focus:ring-indigo-100"
+                      className="w-full rounded-xl border border-slate-300 p-3 text-sm focus:border-indigo-500 focus:outline-hidden focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-100 disabled:cursor-not-allowed"
                     />
                   </div>
                 ) : (
@@ -1088,6 +1187,15 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
             </div>
           )}
 
+          {hasUnresolvedIssues && (
+            <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+              <span>
+                Cảnh báo: Có câu hỏi chưa được lưu thành công trên máy chủ (Xung đột hoặc Lỗi kết nối). Vui lòng đóng hộp thoại và bấm &quot;Thử lại&quot; trước khi nộp bài.
+              </span>
+            </div>
+          )}
+
           {submitError && (
             <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
               <AlertTriangle className="h-4 w-4 shrink-0 text-red-500 mt-0.5" />
@@ -1107,14 +1215,14 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
             <Button
               type="button"
               variant="default"
-              disabled={isSubmitting}
+              disabled={isSubmitting || hasUnresolvedIssues}
               onClick={() => handleFinalSubmit()}
               className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
             >
               {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Đang chấm bài...</span>
+                  <span>Đang xác nhận & nộp...</span>
                 </>
               ) : (
                 <>

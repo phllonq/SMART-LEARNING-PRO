@@ -4,14 +4,14 @@
 - **Product Name**: SMART LEARNING PRO
 - **Location**: `E:\SMART-LEARNING-PRO`
 - **Target Audience**: Middle & High School Students (THCS & THPT) in Vietnam, Teachers, and School Administrators.
-- **Current Phase**: PHASE 6.3.4 — Autosave Versioning & Data Consistency Remediation:
-  - **Reload Version Restoration**: **PASS** (Frontend `versionCounters` synchronized from server `saved_answers[qid].version` on load/reload, eliminating silent data loss and false success feedback).
-  - **Database-Level OCC Atomic Conditional Update**: **PASS** (`UPDATE student_answers ... WHERE id = :id AND version = :expected_version` implemented; `IntegrityError` rollback and retry on initial insert race condition).
-  - **Explicit Autosave Statuses**: **PASS** (Backend returns `SAVED`, `VERSION_CONFLICT`, `STALE_IGNORED` with authoritative version and persisted answer payload).
-  - **Frontend Conflict & Debounce Handling**: **PASS** (Support for `CONFLICT` badge with retry, in-flight version checking, and full drain/flush of pending debounced text inputs prior to submission).
-  - **Automated Playwright E2E Suite**: **36/36 PASS** on real Google Chrome (`channel: 'chrome'`) across all test suites, including reload-and-edit exam scenario.
+- **Current Phase**: PHASE 6.3.6 — Submission Barrier & Answer Persistence Guarantee:
+  - **Centralized Autosave Tracking**: **PASS** (Active promises tracked per question in `inFlightAutosavePromises`; local revisions & server versions tracked; covers single, multiple, true/false, and short answer).
+  - **6-Stage Submission Barrier**: **PASS** (Stage 1 Freeze UI -> Stage 2 Flush debounces -> Stage 3 Await all in-flight promises -> Stage 4 Validate 100% answers confirmed SAVED -> Stage 5 Submit -> Stage 6 Unlock).
+  - **Submission Integrity & Guard**: **PASS** (Zero submission if any answer is `SAVING`, `CONFLICT`, or `ERROR`; submit confirmation button disabled when unresolved issues exist; detailed error messaging for failed questions).
+  - **Backend Submission Safety**: **PASS** (`submit_exam_attempt` verifies student ownership, deadline, and rejects any subsequent autosaves with HTTP 403 `PermissionDeniedException`; concurrent initial insert race condition handled safely via UniqueConstraint rollback).
+  - **Automated Playwright E2E Suite**: **36/36 PASS** on real Google Chrome (`channel: 'chrome'`) across all test suites, including network failure submission barrier blocking test.
   - **Frontend Quality Gates**: TypeScript check (0 errors), ESLint (0 errors, 0 warnings), Next.js Build (23/23 static and dynamic routes compiled successfully).
-  - **Backend Quality Gates**: 39/39 Automated Pytest tests PASSING in 8.93s (including dedicated `test_autosave_remediation_634.py`).
+  - **Backend Quality Gates**: 41/41 Automated Pytest tests PASSING in 14.13s (including `test_concurrent_first_insert_race_condition` and `test_post_submit_autosave_rejected`).
 - **Overall Status**: VERIFIED, HARDENED, HIGH CONCURRENCY RESILIENCE, RIGOROUS QUALITY GATES PASSING
 
 ---
@@ -56,6 +56,8 @@
 | Phase 6.3.2 | Exam Engine Hardening & Remediation | **PASS** | 100% | Confidentiality fix, UniqueConstraint, versioning, 400ms debounce, assignment policy priority, 35/35 Pytest, 36/36 Playwright, PHASE_6_3_2_HARDENING_REPORT.md |
 | Phase 6.3.3 | Independent Hardening Verification | **PASS** | 100% | Read-only verification, autosave reload vulnerability identified, PHASE_6_3_3_INDEPENDENT_VERIFICATION.md |
 | Phase 6.3.4 | Autosave Versioning & Data Consistency Remediation | **PASS** | 100% | Reload version restoration, database OCC conditional update, conflict handling, debounce flush, 39/39 Pytest, 36/36 Playwright, PHASE_6_3_4_AUTOSAVE_REMEDIATION.md |
+| Phase 6.3.5 | Independent Concurrency & Submission Verification | **PASS** | 100% | Read-only verification, identified P0 submission barrier defect, PHASE_6_3_5_INDEPENDENT_VERIFICATION.md |
+| Phase 6.3.6 | Submission Barrier & Answer Persistence Guarantee | **PASS** | 100% | 6-Stage Submission Barrier, centralized autosave tracking, UI freeze, concurrent initial insert test, post-submit rejection, 41/41 Pytest, 36/36 Playwright, PHASE_6_3_6_SUBMISSION_BARRIER.md |
 | Phase 7 | AI Engine & Socratic Tutor Integration | PENDING | 0% | Gemini API diagnostics, Socratic chat, adaptive practice |
 | Phase 8 | Gamification & UX Refinement | IN PROGRESS | 60% | Streaks, XP badges, Level UI integrated into Student portal |
 | Phase 9 | Testing & Quality Assurance | **PASS** | 100% | 35/35 Backend tests PASS, 36/36 E2E tests PASS, TypeScript PASS, ESLint PASS, Next.js build PASS |

@@ -309,7 +309,7 @@ test.describe("Stage A — Student Exam Interface & Lifecycle E2E (Phase 6.3)", 
     }
   });
 
-  test("Scenario 15: Network failure during autosave displays error state", async ({
+  test("Scenario 15: Network failure during autosave displays error state and Submission Barrier blocks submission", async ({
     page,
   }) => {
     // Login as the student
@@ -327,6 +327,13 @@ test.describe("Stage A — Student Exam Interface & Lifecycle E2E (Phase 6.3)", 
     // Wait for attempt screen to render question 1
     await expect(page.locator("text=Câu hỏi 1")).toBeVisible();
 
+    // Track whether submit API was ever called
+    let submitAttemptCalled = false;
+    await page.route("**/api/v1/exams/attempts/**/submit", (route) => {
+      submitAttemptCalled = true;
+      route.continue();
+    });
+
     // Intercept and abort autosave requests to simulate network failure
     await page.route("**/api/v1/exams/attempts/**/answers/**", (route) => {
       route.abort("failed");
@@ -339,6 +346,23 @@ test.describe("Stage A — Student Exam Interface & Lifecycle E2E (Phase 6.3)", 
     // Verify error state is shown instead of confirmed saved state
     await expect(page.locator("text=Lỗi lưu (Thử lại)").first()).toBeVisible({ timeout: 5000 });
     await expect(page.locator("text=Đã lưu máy chủ").first()).not.toBeVisible();
+
+    // Open submit confirmation dialog
+    const submitBtn = page.locator("button:has-text('Nộp bài')").first();
+    await submitBtn.click();
+    await expect(page.locator("h3:has-text('Xác nhận nộp bài thi')")).toBeVisible();
+
+    // Verify Submission Barrier warning in dialog
+    await expect(
+      page.locator("text=Có câu hỏi chưa được lưu thành công trên máy chủ")
+    ).toBeVisible();
+
+    // Verify submit confirmation button is disabled
+    const confirmSubmitBtn = page.locator("button:has-text('Xác nhận nộp bài')");
+    await expect(confirmSubmitBtn).toBeDisabled();
+
+    // Confirm that submit API was never called
+    expect(submitAttemptCalled).toBe(false);
   });
 
   test("Scenario 16: Expired attempt handling", async ({ request }) => {
