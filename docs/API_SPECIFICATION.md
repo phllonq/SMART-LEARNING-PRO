@@ -329,8 +329,8 @@ Tất cả các endpoint chương trình học đều hỗ trợ kiểm soát ph
 - **`GET /api/v1/exams/attempts/{attempt_id}`**
   - **Mô tả**: Lấy lại snapshot câu hỏi và từ điển các câu trả lời học sinh đã lưu trước đó (`saved_answers`) để khôi phục giao diện làm bài khi tải lại trang hoặc rớt mạng.
 
-- **`POST /api/v1/exams/attempts/{attempt_id}/questions/{question_id}/autosave`**
-  - **Mô tả**: Autosave câu trả lời nền (debounce theo thời gian thực).
+- **`PUT /api/v1/exams/attempts/{attempt_id}/answers/{question_id}`**
+  - **Mô tả**: Autosave câu trả lời nền (debounce theo thời gian thực) với cơ chế chống ghi đè gói tin trễ mạng (out-of-order packet protection).
   - **Body**:
     ```json
     {

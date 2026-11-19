@@ -7,6 +7,7 @@ from typing import Optional, List, Tuple, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import IntegrityError
 
 from app.modules.exams.models import Exam, ExamQuestion, ExamAttempt, StudentAnswer, ExamResult, ExamStatus, AttemptStatus
 from app.modules.exams.schemas import (
@@ -324,6 +325,7 @@ async def start_exam_attempt(
     - Reusable for Homework Assignments via assignment_id.
     """
     now = datetime.now(timezone.utc)
+    student_id = str(student.id)
     exam = await get_exam_by_id(db, exam_id, user=student)
 
     if exam.status != ExamStatus.PUBLISHED.value or not exam.is_published:
@@ -454,10 +456,36 @@ async def start_exam_attempt(
         started_at=started_at,
         deadline_at=deadline_at,
         maximum_score=exam.total_points,
-        questions_snapshot_json=json.dumps(sanitized_snapshot, ensure_ascii=False)
+        questions_snapshot_json=json.dumps(sanitized_snapshot, ensure_ascii=False),
+        answer_key_snapshot_json=json.dumps(full_snapshot, ensure_ascii=False)
     )
     db.add(attempt)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        # Concurrent start race condition: reload the active attempt that won the race
+        active_conditions = [
+            ExamAttempt.exam_id == exam_id,
+            ExamAttempt.student_id == student_id,
+            ExamAttempt.status == AttemptStatus.IN_PROGRESS.value
+        ]
+        if assignment_id:
+            active_conditions.append(ExamAttempt.assignment_id == assignment_id)
+        else:
+            active_conditions.append(ExamAttempt.assignment_id.is_(None))
+
+        active_query = (
+            select(ExamAttempt)
+            .where(and_(*active_conditions))
+            .options(selectinload(ExamAttempt.exam))
+        )
+        active_res = await db.execute(active_query)
+        winning_attempt = active_res.scalar_one_or_none()
+        if winning_attempt:
+            winning_snapshot = json.loads(winning_attempt.questions_snapshot_json or "[]")
+            return winning_attempt, winning_snapshot
+        raise
 
     att_res = await db.execute(
         select(ExamAttempt)
@@ -550,6 +578,10 @@ async def autosave_answer(
         )
         db.add(answer)
     else:
+        # Out-of-order protection: discard delayed packet if time_spent is strictly lower than existing recorded time
+        if data.time_spent_seconds < answer.time_spent_seconds:
+            return answer
+
         answer.selected_option_id = data.selected_option_id
         answer.selected_option_ids_json = opt_ids_json
         answer.answer_text = data.answer_text
@@ -585,6 +617,11 @@ async def submit_exam_attempt(
     if attempt.status in [AttemptStatus.SUBMITTED.value, AttemptStatus.AUTO_SUBMITTED.value, AttemptStatus.GRADED.value]:
         if attempt.result:
             r = attempt.result
+            q_reviews = None
+            if attempt.exam.allow_review:
+                rev_resp = await get_attempt_review(db, attempt_id, user=user)
+                q_reviews = rev_resp.question_reviews
+
             return ExamSubmitResponse(
                 attempt_id=attempt.id,
                 exam_id=attempt.exam_id,
@@ -599,7 +636,8 @@ async def submit_exam_attempt(
                 accuracy_percentage=r.accuracy_percentage,
                 feedback_summary=r.feedback_summary,
                 submitted_at=attempt.submitted_at or attempt.created_at,
-                review_allowed=attempt.exam.allow_review
+                review_allowed=attempt.exam.allow_review,
+                question_reviews=q_reviews
             )
 
     now = datetime.now(timezone.utc)
@@ -612,25 +650,39 @@ async def submit_exam_attempt(
     attempt.time_spent_seconds = max(0, time_spent)
 
     # 2. Server-side Automatic Grading
-    # Fetch questions with actual correct options from DB
+    # Decode immutable answer key snapshot if available
+    snapshot_keys_map = {}
+    if attempt.answer_key_snapshot_json:
+        try:
+            raw_keys = json.loads(attempt.answer_key_snapshot_json)
+            snapshot_keys_map = {item["question_id"]: item for item in raw_keys}
+        except Exception:
+            snapshot_keys_map = {}
+
+    # For any question not in snapshot_keys_map (e.g. legacy attempts), query DB
     q_ids = [q["question_id"] for q in snapshot]
-    questions_query = (
-        select(Question)
-        .where(Question.id.in_(q_ids))
-        .options(selectinload(Question.options))
-    )
-    q_res = await db.execute(questions_query)
-    questions_map = {q.id: q for q in q_res.scalars().all()}
+    missing_q_ids = [qid for qid in q_ids if qid not in snapshot_keys_map]
+    db_questions_map = {}
+    if missing_q_ids:
+        questions_query = (
+            select(Question)
+            .where(Question.id.in_(missing_q_ids))
+            .options(selectinload(Question.options))
+        )
+        q_res = await db.execute(questions_query)
+        db_questions_map = {q.id: q for q in q_res.scalars().all()}
 
     # Fetch all student answers
     answers_query = select(StudentAnswer).where(StudentAnswer.attempt_id == attempt_id)
     answers_res = await db.execute(answers_query)
     answers_map = {a.question_id: a for a in answers_res.scalars().all()}
 
-    # Points mapping from exam_questions
-    eq_query = select(ExamQuestion).where(ExamQuestion.exam_id == attempt.exam_id)
-    eq_res = await db.execute(eq_query)
-    points_map = {eq.question_id: eq.points for eq in eq_res.scalars().all()}
+    # Points mapping from exam_questions or snapshot
+    points_map = {}
+    if not snapshot_keys_map:
+        eq_query = select(ExamQuestion).where(ExamQuestion.exam_id == attempt.exam_id)
+        eq_res = await db.execute(eq_query)
+        points_map = {eq.question_id: eq.points for eq in eq_res.scalars().all()}
 
     total_score = 0.0
     correct_count = 0
@@ -640,83 +692,144 @@ async def submit_exam_attempt(
 
     for q_item in snapshot:
         qid = q_item["question_id"]
-        question = questions_map.get(qid)
         ans = answers_map.get(qid)
         max_q_points = points_map.get(qid, q_item.get("points", 1.0))
 
-        if not question:
-            continue
+        if qid in snapshot_keys_map:
+            snap_q = snapshot_keys_map[qid]
+            q_type = snap_q["question_type"]
+            q_content = snap_q["content"]
+            q_explanation = snap_q.get("explanation")
+            max_q_points = snap_q.get("points", max_q_points)
+            options = snap_q.get("options", [])
 
-        q_type = question.question_type
-        is_correct = False
-        points_awarded = 0.0
+            is_correct = False
+            points_awarded = 0.0
 
-        if not ans or (not ans.selected_option_id and not ans.selected_option_ids_json and not ans.answer_text):
-            # Skipped question
-            skipped_count += 1
-            if ans:
-                ans.is_correct = False
-                ans.points_awarded = 0.0
-        else:
-            # Evaluate based on Question Type
-            if q_type in [QuestionType.SINGLE_CHOICE.value, QuestionType.TRUE_FALSE.value]:
-                correct_opt = next((o for o in question.options if o.is_correct), None)
-                if correct_opt and ans.selected_option_id == correct_opt.id:
-                    is_correct = True
-                    points_awarded = max_q_points
-                else:
-                    is_correct = False
-                    points_awarded = 0.0
-
-            elif q_type == QuestionType.MULTIPLE_CHOICE.value:
-                correct_opt_ids = {o.id for o in question.options if o.is_correct}
-                student_opt_ids = set()
-                if ans.selected_option_ids_json:
-                    try:
-                        student_opt_ids = set(json.loads(ans.selected_option_ids_json))
-                    except Exception:
-                        pass
-                elif ans.selected_option_id:
-                    student_opt_ids = {ans.selected_option_id}
-
-                if student_opt_ids == correct_opt_ids:
-                    is_correct = True
-                    points_awarded = max_q_points
-                else:
-                    is_correct = False
-                    points_awarded = 0.0
-
-            elif q_type == QuestionType.SHORT_ANSWER.value:
-                # Deterministic normalized comparison with explanation / correct options
-                correct_opts_texts = {o.content.strip().lower() for o in question.options if o.is_correct}
-                student_text = (ans.answer_text or "").strip().lower()
-                if student_text in correct_opts_texts:
-                    is_correct = True
-                    points_awarded = max_q_points
-                else:
-                    is_correct = False
-                    points_awarded = 0.0
-
-            if is_correct:
-                correct_count += 1
+            if not ans or (not ans.selected_option_id and not ans.selected_option_ids_json and not ans.answer_text):
+                skipped_count += 1
+                if ans:
+                    ans.is_correct = False
+                    ans.points_awarded = 0.0
             else:
-                wrong_count += 1
+                if q_type in [QuestionType.SINGLE_CHOICE.value, QuestionType.TRUE_FALSE.value]:
+                    correct_opt = next((o for o in options if o.get("is_correct")), None)
+                    if correct_opt and ans.selected_option_id == correct_opt.get("id"):
+                        is_correct = True
+                        points_awarded = max_q_points
+                elif q_type == QuestionType.MULTIPLE_CHOICE.value:
+                    correct_opt_ids = {o["id"] for o in options if o.get("is_correct")}
+                    student_opt_ids = set()
+                    if ans.selected_option_ids_json:
+                        try:
+                            student_opt_ids = set(json.loads(ans.selected_option_ids_json))
+                        except Exception:
+                            pass
+                    elif ans.selected_option_id:
+                        student_opt_ids = {ans.selected_option_id}
+                    if student_opt_ids == correct_opt_ids:
+                        is_correct = True
+                        points_awarded = max_q_points
+                elif q_type == QuestionType.SHORT_ANSWER.value:
+                    correct_opts_texts = {o["content"].strip().lower() for o in options if o.get("is_correct")}
+                    student_text = (ans.answer_text or "").strip().lower()
+                    if student_text in correct_opts_texts:
+                        is_correct = True
+                        points_awarded = max_q_points
 
-            ans.is_correct = is_correct
-            ans.points_awarded = points_awarded
-            total_score += points_awarded
+                if is_correct:
+                    correct_count += 1
+                else:
+                    wrong_count += 1
 
-        if attempt.exam.allow_review:
-            correct_keys = [o.option_key for o in question.options if o.is_correct]
-            question_reviews.append({
-                "question_id": qid,
-                "content": question.content,
-                "is_correct": is_correct,
-                "points_awarded": points_awarded,
-                "max_points": max_q_points,
-                "correct_option_keys": correct_keys,
-                "explanation": question.explanation
-            })
+                ans.is_correct = is_correct
+                ans.points_awarded = points_awarded
+                total_score += points_awarded
+
+            if attempt.exam.allow_review:
+                correct_keys = [o["option_key"] for o in options if o.get("is_correct")]
+                question_reviews.append({
+                    "question_id": qid,
+                    "content": q_content,
+                    "is_correct": is_correct,
+                    "points_awarded": points_awarded,
+                    "max_points": max_q_points,
+                    "correct_option_keys": correct_keys,
+                    "explanation": q_explanation
+                })
+
+        elif qid in db_questions_map:
+            question = db_questions_map[qid]
+            q_type = question.question_type
+            is_correct = False
+            points_awarded = 0.0
+
+            if not ans or (not ans.selected_option_id and not ans.selected_option_ids_json and not ans.answer_text):
+                # Skipped question
+                skipped_count += 1
+                if ans:
+                    ans.is_correct = False
+                    ans.points_awarded = 0.0
+            else:
+                # Evaluate based on Question Type
+                if q_type in [QuestionType.SINGLE_CHOICE.value, QuestionType.TRUE_FALSE.value]:
+                    correct_opt = next((o for o in question.options if o.is_correct), None)
+                    if correct_opt and ans.selected_option_id == correct_opt.id:
+                        is_correct = True
+                        points_awarded = max_q_points
+                    else:
+                        is_correct = False
+                        points_awarded = 0.0
+
+                elif q_type == QuestionType.MULTIPLE_CHOICE.value:
+                    correct_opt_ids = {o.id for o in question.options if o.is_correct}
+                    student_opt_ids = set()
+                    if ans.selected_option_ids_json:
+                        try:
+                            student_opt_ids = set(json.loads(ans.selected_option_ids_json))
+                        except Exception:
+                            pass
+                    elif ans.selected_option_id:
+                        student_opt_ids = {ans.selected_option_id}
+
+                    if student_opt_ids == correct_opt_ids:
+                        is_correct = True
+                        points_awarded = max_q_points
+                    else:
+                        is_correct = False
+                        points_awarded = 0.0
+
+                elif q_type == QuestionType.SHORT_ANSWER.value:
+                    # Deterministic normalized comparison with explanation / correct options
+                    correct_opts_texts = {o.content.strip().lower() for o in question.options if o.is_correct}
+                    student_text = (ans.answer_text or "").strip().lower()
+                    if student_text in correct_opts_texts:
+                        is_correct = True
+                        points_awarded = max_q_points
+                    else:
+                        is_correct = False
+                        points_awarded = 0.0
+
+                if is_correct:
+                    correct_count += 1
+                else:
+                    wrong_count += 1
+
+                ans.is_correct = is_correct
+                ans.points_awarded = points_awarded
+                total_score += points_awarded
+
+            if attempt.exam.allow_review:
+                correct_keys = [o.option_key for o in question.options if o.is_correct]
+                question_reviews.append({
+                    "question_id": qid,
+                    "content": question.content,
+                    "is_correct": is_correct,
+                    "points_awarded": points_awarded,
+                    "max_points": max_q_points,
+                    "correct_option_keys": correct_keys,
+                    "explanation": question.explanation
+                })
 
     # Total questions
     total_q = len(snapshot)
@@ -760,8 +873,13 @@ async def submit_exam_attempt(
         stu_user.xp_points += xp_gain
         stu_user.current_level = 1 + (stu_user.xp_points // 200)
 
-    await db.flush()
-    await db.refresh(attempt)
+    try:
+        await db.flush()
+        await db.refresh(attempt)
+    except IntegrityError:
+        await db.rollback()
+        # Another concurrent submission flushed first, re-call submit_exam_attempt to return cached result
+        return await submit_exam_attempt(db, attempt_id, user, auto_submitted)
 
     return ExamSubmitResponse(
         attempt_id=attempt.id,
@@ -779,6 +897,108 @@ async def submit_exam_attempt(
         submitted_at=now,
         review_allowed=attempt.exam.allow_review,
         question_reviews=question_reviews if attempt.exam.allow_review else None
+    )
+
+
+async def get_attempt_review(
+    db: AsyncSession,
+    attempt_id: str,
+    user: User
+) -> ExamSubmitResponse:
+    """
+    Retrieve completed examination attempt review.
+    Enforces review permission and returns full question breakdown.
+    """
+    attempt, snapshot = await get_attempt_detail(db, attempt_id, user=user)
+
+    if attempt.status not in [AttemptStatus.SUBMITTED.value, AttemptStatus.AUTO_SUBMITTED.value, AttemptStatus.GRADED.value]:
+        raise PermissionDeniedException("Bài thi chưa được nộp. Không thể xem lại đáp án.")
+
+    is_privileged = user.role in [UserRole.TEACHER.value, UserRole.ADMIN.value, UserRole.SUPERADMIN.value]
+    if not is_privileged and not attempt.exam.allow_review:
+        raise PermissionDeniedException("Đề thi này không cho phép xem lại bài làm.")
+
+    # Fetch answers
+    answers_query = select(StudentAnswer).where(StudentAnswer.attempt_id == attempt_id)
+    answers_res = await db.execute(answers_query)
+    answers_map = {a.question_id: a for a in answers_res.scalars().all()}
+
+    # Check for snapshot keys
+    snapshot_keys_map = {}
+    if attempt.answer_key_snapshot_json:
+        try:
+            raw_keys = json.loads(attempt.answer_key_snapshot_json)
+            snapshot_keys_map = {item["question_id"]: item for item in raw_keys}
+        except Exception:
+            snapshot_keys_map = {}
+
+    missing_qids = [q["question_id"] for q in snapshot if q["question_id"] not in snapshot_keys_map]
+    db_questions_map = {}
+    if missing_qids:
+        q_res = await db.execute(
+            select(Question).where(Question.id.in_(missing_qids)).options(selectinload(Question.options))
+        )
+        db_questions_map = {q.id: q for q in q_res.scalars().all()}
+
+    question_reviews = []
+    for q_item in snapshot:
+        qid = q_item["question_id"]
+        ans = answers_map.get(qid)
+        max_q_points = q_item.get("points", 1.0)
+        is_correct = ans.is_correct if ans else False
+        points_awarded = ans.points_awarded if ans else 0.0
+
+        if qid in snapshot_keys_map:
+            snap_q = snapshot_keys_map[qid]
+            opts = snap_q.get("options", [])
+            correct_keys = [o["option_key"] for o in opts if o.get("is_correct")]
+            explanation = snap_q.get("explanation")
+            content = snap_q.get("content", q_item.get("content", ""))
+            max_q_points = snap_q.get("points", max_q_points)
+        elif qid in db_questions_map:
+            q = db_questions_map[qid]
+            correct_keys = [o.option_key for o in q.options if o.is_correct]
+            explanation = q.explanation
+            content = q.content
+        else:
+            correct_keys = []
+            explanation = None
+            content = q_item.get("content", "")
+
+        question_reviews.append({
+            "question_id": qid,
+            "content": content,
+            "is_correct": is_correct,
+            "points_awarded": points_awarded,
+            "max_points": max_q_points,
+            "correct_option_keys": correct_keys,
+            "explanation": explanation
+        })
+
+    r = attempt.result
+    total_score = attempt.score if attempt.score is not None else (r.total_score if r else 0.0)
+    correct_cnt = r.correct_answers_count if r else 0
+    wrong_cnt = r.wrong_answers_count if r else 0
+    skipped_cnt = r.skipped_answers_count if r else 0
+    accuracy = r.accuracy_percentage if r else 0.0
+    feedback = r.feedback_summary if r else None
+
+    return ExamSubmitResponse(
+        attempt_id=attempt.id,
+        exam_id=attempt.exam_id,
+        status=attempt.status,
+        total_score=total_score,
+        maximum_score=attempt.maximum_score,
+        passing_score=attempt.exam.passing_points,
+        is_passed=(total_score >= attempt.exam.passing_points),
+        correct_answers_count=correct_cnt,
+        wrong_answers_count=wrong_cnt,
+        skipped_answers_count=skipped_cnt,
+        accuracy_percentage=accuracy,
+        feedback_summary=feedback,
+        submitted_at=attempt.submitted_at or attempt.created_at,
+        review_allowed=True,
+        question_reviews=question_reviews
     )
 
 

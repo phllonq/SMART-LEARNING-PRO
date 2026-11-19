@@ -81,7 +81,8 @@ class ExamAttempt(Base, TimestampMixin):
     score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     maximum_score: Mapped[float] = mapped_column(Float, default=10.0)
     time_spent_seconds: Mapped[int] = mapped_column(Integer, default=0)
-    questions_snapshot_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Immutable questions snapshot
+    questions_snapshot_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Immutable sanitized questions snapshot
+    answer_key_snapshot_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Immutable server-side answer keys snapshot
     assignment_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("assignments.id", ondelete="SET NULL"), nullable=True, index=True)
 
     exam: Mapped["Exam"] = relationship("Exam", back_populates="attempts")

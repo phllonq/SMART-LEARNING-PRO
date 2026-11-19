@@ -2,7 +2,7 @@ import logging
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import MetaData, DateTime, func
+from sqlalchemy import MetaData, DateTime, func, event
 from datetime import datetime
 
 from app.config import settings
@@ -45,6 +45,13 @@ if "sqlite" in settings.DATABASE_URL:
     engine_kwargs["connect_args"] = {"check_same_thread": False}
 
 engine = create_async_engine(settings.DATABASE_URL, **engine_kwargs)
+
+if "sqlite" in settings.DATABASE_URL:
+    @event.listens_for(engine.sync_engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

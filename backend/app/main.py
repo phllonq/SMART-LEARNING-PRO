@@ -95,6 +95,8 @@ async def health_check():
     }
 
 
+from sqlalchemy.exc import IntegrityError
+
 # Custom Exception Handlers
 @app.exception_handler(EntityNotFoundException)
 async def entity_not_found_handler(request: Request, exc: EntityNotFoundException):
@@ -117,4 +119,12 @@ async def invalid_credentials_handler(request: Request, exc: InvalidCredentialsE
         status_code=exc.status_code,
         content={"detail": exc.detail},
         headers=exc.headers
+    )
+
+
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError):
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={"detail": "Dữ liệu bị trùng lặp hoặc vi phạm ràng buộc toàn vẹn cơ sở dữ liệu."}
     )

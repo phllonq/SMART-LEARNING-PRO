@@ -100,3 +100,32 @@
     - Created [backend/tests/test_assignments.py](file:///E:/SMART-LEARNING-PRO/backend/tests/test_assignments.py): 2 suites testing assignment lifecycle (DRAFT visibility), student start & answer confidentiality, autosaving, auto-grading submission, idempotency, attempt limit enforcement, and teacher gradebook.
     - Executed complete backend test suite: **23/23 tests PASSED in 5.46s** (exit code 0).
   - **Phase 6 Documentation**: Updated `docs/DATABASE_SCHEMA.md`, `docs/API_SPECIFICATION.md`, `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, `CHANGELOG.md`.
+
+## Session 7: Production Readiness & Concurrency Hardening Audit (Phase 5.1)
+- **Timestamp**: 2026-11-19 09:30:00 - 10:15:00
+- **Action**:
+  - **Audit & Schema Hardening**:
+    - Discovered SQLite connection defaulted to `PRAGMA foreign_keys=0`. Attached SQLAlchemy connection event listener `@event.listens_for(engine.sync_engine, "connect")` in `backend/app/core/database.py` executing `PRAGMA foreign_keys=ON`.
+    - Created and executed idempotent migration `scripts/migrate_hardening.py`:
+      - Added `answer_key_snapshot_json` column to `exam_attempts` for immutable server-side evaluation.
+      - Added partial unique index `uq_active_exam_attempt` on `exam_attempts(student_id, exam_id) WHERE status = 'IN_PROGRESS' AND assignment_id IS NULL`.
+      - Added partial unique index `uq_active_assignment_attempt` on `exam_attempts(student_id, assignment_id) WHERE status = 'IN_PROGRESS' AND assignment_id IS NOT NULL`.
+  - **Concurrency & Logic Hardening**:
+    - `start_exam_attempt`: Decoupled question evaluation by saving complete options and explanations into `answer_key_snapshot_json`. Handled concurrent start collision via `try ... except IntegrityError: db.rollback()` returning active attempt.
+    - `submit_exam_attempt`: Grades against immutable `answer_key_snapshot_json` if present, preventing score mutation if questions in Question Bank are subsequently edited or deleted. Wrapped result flush in `try ... except IntegrityError: db.rollback()` for concurrent submit idempotency.
+    - `autosave_answer`: Added out-of-order protection `if data.time_spent_seconds < answer.time_spent_seconds: return answer` discarding delayed network packets.
+    - `join_classroom_by_code`: Added atomic post-flush capacity verification (`after_count > max_students -> delete new_member`) to prevent race condition when 2 students join a 1-seat classroom simultaneously.
+    - `get_attempt_review`: Added `GET /api/v1/exams/attempts/{id}/review` with ownership verification, attempt completion check, and review policy enforcement.
+    - `submit_assignment`: Allowed submission on cancelled assignments (`allow_cancelled=True`).
+  - **Automated Testing & Evidence**:
+    - Created `backend/tests/test_hardening_audit.py` with 8 comprehensive integration suites:
+      1. Migration idempotency.
+      2. Concurrent classroom join for same student (200 OK + 409 Conflict).
+      3. Concurrent classroom join capacity limit (1 seat, 2 students -> 200 OK + 403 Forbidden).
+      4. Concurrent exam attempt starts (resolves to single attempt without duplicates).
+      5. Out-of-order autosave packet discarding.
+      6. Question Bank edit decoupling & immutable snapshot grading.
+      7. Submission review security & IDOR protection (403 for unauthorized students).
+      8. Cancelled assignment submission safety.
+    - Executed entire backend test suite: **31/31 tests PASSED in 8.22s** (exit code 0).
+  - **Deliverables**: Created audit report `docs/PHASE_5_1_HARDENING_AUDIT.md`. Updated `DATABASE_SCHEMA.md`, `API_SPECIFICATION.md`, `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, `CHANGELOG.md`.

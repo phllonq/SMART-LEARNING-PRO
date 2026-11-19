@@ -6,6 +6,7 @@ from typing import Optional, List, Dict, Any, Tuple
 from sqlalchemy import select, and_, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions import (
     EntityNotFoundException,
@@ -239,7 +240,7 @@ async def join_classroom_by_code(db: AsyncSession, code: str, student: User) -> 
     if is_already_member:
         raise DuplicateEntityException("Bạn đã là thành viên của lớp học này.")
 
-    # Capacity check
+    # Capacity check (preliminary in-memory check)
     if len(classroom.members) >= classroom.max_students:
         raise PermissionDeniedException(f"Lớp học đã đạt sĩ số tối đa ({classroom.max_students} học sinh).")
 
@@ -250,7 +251,21 @@ async def join_classroom_by_code(db: AsyncSession, code: str, student: User) -> 
     )
     db.add(new_member)
     classroom.members.append(new_member)
-    await db.flush()
+
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise DuplicateEntityException("Bạn đã là thành viên của lớp học này.")
+
+    # Concurrency capacity enforcement: verify total members in DB after insert
+    count_query = select(func.count(ClassroomMember.id)).where(ClassroomMember.classroom_id == classroom.id)
+    current_count = (await db.execute(count_query)).scalar_one()
+    if current_count > classroom.max_students:
+        await db.delete(new_member)
+        await db.flush()
+        raise PermissionDeniedException(f"Lớp học đã đạt sĩ số tối đa ({classroom.max_students} học sinh).")
+
     db.expire(classroom, ["members"])
 
     return await get_classroom_by_id(db, classroom.id, user=student)
@@ -395,7 +410,12 @@ async def create_assignment(
     return await get_assignment_by_id(db, assignment.id, user=user)
 
 
-async def get_assignment_by_id(db: AsyncSession, assignment_id: str, user: User) -> Assignment:
+async def get_assignment_by_id(
+    db: AsyncSession,
+    assignment_id: str,
+    user: User,
+    allow_cancelled: bool = False
+) -> Assignment:
     """Retrieve assignment and verify access."""
     q = (
         select(Assignment)
@@ -419,9 +439,9 @@ async def get_assignment_by_id(db: AsyncSession, assignment_id: str, user: User)
     if not (is_admin or is_teacher_owner or is_member):
         raise PermissionDeniedException("Bạn không có quyền truy cập vào bài tập này.")
 
-    # Student cannot view draft/cancelled assignment
+    # Student cannot view draft/cancelled assignment unless allow_cancelled is True (e.g. submitting active attempt)
     if not (is_admin or is_teacher_owner):
-        if assignment.status != AssignmentStatus.PUBLISHED.value or not assignment.is_published:
+        if not allow_cancelled and (assignment.status != AssignmentStatus.PUBLISHED.value or not assignment.is_published):
             raise PermissionDeniedException("Bài tập này chưa được công bố hoặc đã bị hủy.")
 
     return assignment
@@ -726,7 +746,7 @@ async def submit_assignment(
     student: User
 ) -> ExamSubmitResponse:
     """Submit student's active assignment attempt with auto-grading."""
-    assignment = await get_assignment_by_id(db, assignment_id, user=student)
+    assignment = await get_assignment_by_id(db, assignment_id, user=student, allow_cancelled=True)
 
     # Find the active or most recent in-progress attempt
     q = (

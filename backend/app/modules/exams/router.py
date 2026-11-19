@@ -17,7 +17,7 @@ from app.modules.exams.service import (
     create_exam, get_exams, get_exam_by_id, update_exam,
     add_question_to_exam, remove_question_from_exam, publish_exam, archive_exam,
     get_available_exams_for_student, start_exam_attempt, get_attempt_detail,
-    autosave_answer, submit_exam_attempt, get_exam_submissions_for_teacher
+    autosave_answer, submit_exam_attempt, get_attempt_review, get_exam_submissions_for_teacher
 )
 
 router = APIRouter(prefix="/exams", tags=["Examinations"])
@@ -126,6 +126,19 @@ async def submit_exam(
     Idempotent: Returns existing result if already submitted.
     """
     return await submit_exam_attempt(db, attempt_id, user=current_user)
+
+
+@router.get("/attempts/{attempt_id}/review", response_model=ExamSubmitResponse)
+async def get_attempt_review_endpoint(
+    attempt_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Retrieve submission review with question explanations, correct answers, and feedback.
+    Enforces student ownership and review_allowed flag (or teacher/admin access).
+    """
+    return await get_attempt_review(db, attempt_id, user=current_user)
 
 
 # ==============================================================================

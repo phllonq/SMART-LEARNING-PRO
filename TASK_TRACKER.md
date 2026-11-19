@@ -53,6 +53,16 @@
 - [x] Student Assignment Workflow (start, autosave, submission, auto-grading, review policy)
 - [x] Teacher Gradebook & Submissions Review (`/api/v1/assignments/{id}/submissions`)
 - [x] Automated Tests for Classrooms & Assignments (4 comprehensive test suites, 100% pass)
+- [x] **Phase 5.1 Hardening & Production Readiness Audit**:
+  - [x] SQLite Foreign Key Enforcement (`PRAGMA foreign_keys=ON` per connection)
+  - [x] Database Migration Hardening (`scripts/migrate_hardening.py` - idempotent migration)
+  - [x] Immutable Snapshot Grading (`answer_key_snapshot_json` decouples grading from future Question Bank edits)
+  - [x] Concurrency & Partial Unique Indexes (`uq_active_exam_attempt`, `uq_active_assignment_attempt`)
+  - [x] Out-of-order delayed autosave protection
+  - [x] Capacity limit race condition protection (pre-check + atomic post-flush count verification)
+  - [x] Submission Review endpoint (`GET /api/v1/exams/attempts/{id}/review`) with anti-IDOR protection
+  - [x] Dedicated Audit Test Suite (`backend/tests/test_hardening_audit.py` - 8/8 tests, 100% pass)
+  - [x] Audit Report documentation (`docs/PHASE_5_1_HARDENING_AUDIT.md`)
 - [ ] Admin User Management & Curriculum Admin Routers
 
 ## Phase 6: AI Engine & Gemini Integration

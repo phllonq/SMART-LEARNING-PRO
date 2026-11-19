@@ -4,11 +4,12 @@
 - **Product Name**: SMART LEARNING PRO
 - **Location**: `E:\SMART-LEARNING-PRO`
 - **Target Audience**: Middle & High School Students (THCS & THPT) in Vietnam, Teachers, and School Administrators.
-- **Current Phase**: PHASE 5 — Teacher & Admin Portals:
+- **Current Phase**: PHASE 5.1 — Production Readiness & Concurrency Hardening:
   - **Classroom Management & Membership**: **100% COMPLETED**
-  - **Homework & Assignment Engine**: **100% COMPLETED** (23/23 Automated Tests PASSING in 5.46s).
-  - Next: Phase 6 (AI Engine & Diagnostics with Google Gemini).
-- **Overall Status**: VERIFIED, SECURE & PRODUCTION QUALITY
+  - **Homework & Assignment Engine**: **100% COMPLETED**
+  - **Database Integrity & Concurrency Hardening**: **100% COMPLETED** (31/31 Automated Tests PASSING in 8.22s).
+  - Next: Phase 6 (Frontend Development / AI Engine).
+- **Overall Status**: VERIFIED, HARDENED, CONCURRENCY-SAFE & PRODUCTION QUALITY
 
 ---
 
@@ -16,17 +17,19 @@
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| **Git integrity** | **PASS** | Commits `3cac958`, `a329d5c`, `f7e6945`, `94c137e`, `1431e65` verified on `master`. Clean working tree. |
-| **Existing backend tests** | **PASS** | Health, Authentication, RBAC, Curriculum, Questions, Exams, Classrooms, and Assignments test suites passing 100%. |
-| **Database integrity** | **PASS** | `database/smart_learning.db` verified: 26 tables, foreign keys active, schema updated with classroom & assignment columns and unique constraint. |
+| **Git integrity** | **PASS** | Commits `3cac958`, `a329d5c`, `f7e6945`, `94c137e`, `1431e65`, `077ce8e` verified on `master`. Clean working tree. |
+| **Existing backend tests** | **PASS** | Health, Authentication, RBAC, Curriculum, Questions, Exams, Classrooms, Assignments, and Hardening Audit test suites passing 100%. |
+| **Database integrity** | **PASS** | `database/smart_learning.db` verified: 26 tables, foreign keys active (`PRAGMA foreign_keys=ON`), partial unique indexes `uq_active_exam_attempt`, `uq_active_assignment_attempt`, and `answer_key_snapshot_json` column. |
+| **Concurrency & Race Safety** | **PASS** | Verified simultaneous joins (409 Conflict), capacity limit (403 Forbidden), concurrent attempt starts (idempotent winner resolution), and out-of-order autosaves (stale packet discarded). |
+| **Snapshot & Historical Integrity** | **PASS** | `answer_key_snapshot_json` captures questions/answer keys at attempt start. Edits/deletions in Question Bank do not alter historical attempt results or grading calculations. |
 | **Health endpoint** | **PASS** | `GET /api/v1/health` returns status 200 OK (`status: healthy`). |
 | **Authentication** | **PASS** | Login & Profile retrieval verified for all seeded accounts (Admin, Teacher, Student). |
 | **RBAC & Ownership** | **PASS** | 4-tier role enforcement tested. Teacher ownership boundaries enforced across classrooms and assignments (403 on editing another teacher's classroom/assignment). Admin override verified. |
 | **Answer Confidentiality** | **PASS** | Verified that students & anonymous users NEVER receive `is_correct` flags or solution leaks via question endpoints, exam attempts, or assignment snapshots. |
 | **Classroom API** | **PASS** | Complete CRUD, unpredictable invite codes (`SL-XXXXXX`), membership join/leave, capacity limit, archive closure, and classroom statistics. |
-| **Assignment Engine** | **PASS** | Create homework from published exams, configure open/due dates, max attempts, late submission policy, review policy, and gradebook submissions. |
-| **Automated tests** | **PASS** | **23/23 tests passing (100% PASS)** in 5.46s (exit code 0). |
-| **Documentation** | **PASS** | `DATABASE_SCHEMA.md`, `API_SPECIFICATION.md`, `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, `CHANGELOG.md` updated. |
+| **Assignment Engine** | **PASS** | Create homework from published exams, configure open/due dates, max attempts, late submission policy, review policy, and gradebook submissions. Safe submission on cancelled assignments. |
+| **Automated tests** | **PASS** | **31/31 tests passing (100% PASS)** in 8.22s (exit code 0). |
+| **Documentation** | **PASS** | `PHASE_5_1_HARDENING_AUDIT.md`, `DATABASE_SCHEMA.md`, `API_SPECIFICATION.md`, `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, `CHANGELOG.md` updated. |
 
 ---
 

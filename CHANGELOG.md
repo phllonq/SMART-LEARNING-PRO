@@ -1,5 +1,29 @@
 # CHANGELOG — SMART LEARNING PRO
 
+## [0.6.1] - 2026-11-19
+### Security & Reliability Hardening (Phase 5.1 Production Readiness Audit)
+- **Toàn vẹn khóa ngoại (Referential Integrity)**:
+  - Kích hoạt `PRAGMA foreign_keys=ON` trên mọi kết nối SQLite Async thông qua SQLAlchemy sync engine connect event listener trong `backend/app/core/database.py`.
+  - Ngăn chặn triệt để dữ liệu mồ côi và bản ghi không hợp lệ.
+- **Đóng băng đề thi & Tách biệt chấm điểm (Immutable Snapshot Grading)**:
+  - Bổ sung cột `answer_key_snapshot_json` vào `exam_attempts`.
+  - Khi bắt đầu làm bài (`start_exam_attempt`), toàn bộ đáp án đúng, thang điểm và lời giải chi tiết được chụp cố định tại thời điểm bắt đầu thi.
+  - Công cụ chấm bài (`submit_exam_attempt`) đánh giá hoàn toàn dựa trên snapshot này, tách biệt 100% với các thao tác chỉnh sửa hoặc xóa câu hỏi trong Question Bank sau đó của giáo viên.
+- **Kiểm soát đồng thời (Concurrency & Race Safety)**:
+  - Thiết lập partial unique indexes `uq_active_exam_attempt` và `uq_active_assignment_attempt` trên `exam_attempts` với điều kiện `WHERE status = 'IN_PROGRESS'`.
+  - Xử lý race condition khi bắt đầu lượt thi đồng thời: tự động xử lý và trả về lượt thi active hợp lệ duy nhất mà không sinh bản ghi thừa.
+  - Cơ chế kiểm tra sĩ số lớp học 2 lớp (pre-check bộ nhớ + atomic post-flush count verification), ngăn chặn 2 học sinh cùng vào lớp có 1 chỗ trống còn lại.
+  - Cơ chế chống ghi đè gói tin autosave trễ mạng (out-of-order packet protection): gói tin có `time_spent_seconds` nhỏ hơn sẽ bị tự động bỏ qua.
+- **Bảo mật & Xem lại bài làm (Review Endpoint & Anti-IDOR)**:
+  - Bổ sung endpoint `GET /api/v1/exams/attempts/{attempt_id}/review`.
+  - Kiểm tra 3 tầng: (1) Chỉ cho phép xem khi attempt đã nộp/đã chấm, (2) Chặn tấn công IDOR giữa các học sinh (403 Forbidden), (3) Tôn trọng cờ `allow_review` của đề thi/bài tập.
+- **Bảo vệ hủy bài tập (Cancelled Assignment Safety)**:
+  - Thêm cờ `allow_cancelled=True` cho phép học sinh nộp bài an toàn ngay cả khi giáo viên vừa hủy bài tập trong lúc học sinh đang hoàn thành.
+- **Bộ kiểm thử tự động kiểm toán chuyên sâu**:
+  - Tạo `backend/tests/test_hardening_audit.py` bao quát 8 tình huống kiểm toán: tính lũy thừa migration, đồng thời join lớp, vượt sĩ số, đồng thời start đề thi, trễ autosave, tách biệt Question Bank, bảo mật IDOR review, nộp bài tập đã hủy.
+  - Nâng tổng số kiểm thử toàn hệ thống lên **31/31 tests PASS (100%)** trong 8.22 giây.
+- **Báo cáo kiểm toán**: Tạo `docs/PHASE_5_1_HARDENING_AUDIT.md`.
+
 ## [0.6.0] - 2026-11-19
 ### Added
 - **Classroom Management Module (`/api/v1/classrooms/*`)**:

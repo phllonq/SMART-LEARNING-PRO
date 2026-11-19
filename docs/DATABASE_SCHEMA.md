@@ -188,6 +188,11 @@ erDiagram
     - `maximum_score`: DOUBLE PRECISION, DEFAULT 10.0
     - `time_spent_seconds`: INTEGER, DEFAULT 0
     - `questions_snapshot_json`: TEXT, NULL (Bản chụp đề thi bất biến đã ẩn đáp án đúng, cách ly với ngân hàng đề gốc)
+    - `answer_key_snapshot_json`: TEXT, NULL (Bản chụp đáp án chuẩn, thang điểm và lời giải chi tiết phục vụ chấm bài độc lập)
+    - `assignment_id`: VARCHAR(36), FK -> `assignments.id`, NULL (Tham chiếu bài tập lớp học nếu lượt thi thuộc bài tập)
+    - **Concurrency Constraints**:
+      - `uq_active_exam_attempt`: Partial UNIQUE INDEX `(student_id, exam_id) WHERE status = 'IN_PROGRESS' AND assignment_id IS NULL`
+      - `uq_active_assignment_attempt`: Partial UNIQUE INDEX `(student_id, assignment_id) WHERE status = 'IN_PROGRESS' AND assignment_id IS NOT NULL`
     - `created_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
     - `updated_at`: TIMESTAMP WITH TIME ZONE, DEFAULT NOW()
 
