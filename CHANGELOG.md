@@ -1,5 +1,42 @@
 # CHANGELOG — SMART LEARNING PRO
 
+## [0.7.0] - 2026-11-19
+### Added - Phase 6: Frontend Foundation (Student, Teacher & Admin Portals)
+- **Kiến trúc Frontend Next.js 16 App Router & React 19**:
+  - Khởi tạo nền tảng frontend chuẩn production bằng Next.js 16.4.6, React 19.3.0, TypeScript Strict Mode và Tailwind CSS v4 trong thư mục `frontend/`.
+  - Cấu hình TanStack React Query v5 để quản lý server state, caching, và refetch tự động.
+  - Tích hợp thư viện KaTeX chuẩn quốc tế với component `MathKaTeX`, hỗ trợ hiển thị mượt mà các công thức Toán, Lý, Hóa phức tạp (cả inline `$formula$` và block `$$formula$$`).
+- **Hệ thống Design System & UI Primitives**:
+  - Tạo bộ UI primitives có khả năng tái sử dụng cao: `Button`, `Card`, `Badge`, `Input`, `Dialog` (Modal), `Skeleton`.
+  - Xây dựng các widget domain dùng chung: `MathKaTeX`, `StatCard`, `EmptyState`.
+- **Cơ chế Xác thực & Phiên làm việc (Dual-Mode Security)**:
+  - Xây dựng `apiClient` linh hoạt (`frontend/src/lib/api/client.ts`) hỗ trợ cả `Authorization: Bearer <token>` và HttpOnly Cookies (`credentials: "include"`).
+  - Triển khai `AuthProvider` và hook `useAuth()` an toàn cho React 19, tự động phục hồi phiên khi tải trang và hỗ trợ chuyển đổi vai trò.
+- **Cổng Học Sinh (Student Portal - `/student/*`)**:
+  - Giao diện Tổng quan (Dashboard): Thống kê chuỗi ngày học liên tục (Streak), điểm kinh nghiệm (XP), cấp độ (Level), lớp học đang tham gia và đề thi tự do.
+  - Quản lý Lớp học: Xem danh sách lớp, modal nhập mã mời tham gia (`SL-XXXXXX`), chức năng tự rời lớp.
+  - Quản lý Bài tập về nhà: Danh sách bài tập kèm huy hiệu trạng thái (Chưa làm, Đang làm, Đã nộp, Đã chấm kèm điểm số) và cảnh báo hạn chót.
+  - Khám phá Môn học GDPT 2018: Lọc môn học theo Khối lớp 6 đến 12 từ API Curriculum.
+  - Phòng Luyện thi: Danh sách đề thi mở tự do kèm thời lượng, số câu hỏi và nút bắt đầu làm bài.
+  - Hồ sơ Học sinh: Thông tin tài khoản, danh hiệu và thống kê thành tích.
+- **Cổng Giáo Viên (Teacher Portal - `/teacher/*`)**:
+  - Bảng điều khiển Giảng dạy: Tổng số lớp, sĩ số học sinh, số lượng đề thi và câu hỏi trong kho.
+  - Quản lý Lớp học & Mã mời: Danh sách lớp, modal tạo lớp học mới (`POST /classrooms`).
+  - Chi tiết Lớp học (`/teacher/classrooms/[id]`): Hộp hiển thị mã mời kích thước lớn, nút sao chép và tạo lại mã mời, bảng danh sách học sinh (xóa học sinh khỏi lớp), tab bài tập kèm modal "Giao bài tập mới".
+  - Quản lý Bài tập: Điều phối toàn bộ bài tập qua các lớp, xuất bản (Publish), hủy bài (Cancel), xem sổ điểm.
+  - Ngân hàng Đề thi: Quản lý ma trận đề, thời lượng, điểm đạt, xuất bản đề thi.
+  - Ngân hàng Câu hỏi: Duyệt câu hỏi theo mức độ nhận thức (Nhận biết, Thông hiểu, Vận dụng, Vận dụng cao), tìm kiếm từ khóa, hiển thị công thức KaTeX, làm nổi bật đáp án đúng và lời giải chi tiết.
+  - Danh sách Học sinh: Tổng hợp toàn bộ học sinh theo học trên tất cả các lớp của giáo viên.
+  - Hồ sơ Giáo viên: Thông tin chứng thực và quyền hạn giảng dạy.
+- **Cổng Quản Trị Hệ Thống (Admin Portal - `/admin/*`)**:
+  - Bảng điều khiển giám sát hạ tầng và trạng thái backend qua endpoint `/api/v1/health`.
+  - Lối tắt chuyển đổi quyền nhanh giữa cổng Học sinh và cổng Giáo viên.
+- **Chất lượng & Kiểm thử**:
+  - TypeScript Strict Mode: **0 lỗi**.
+  - ESLint: **0 lỗi, 0 cảnh báo**.
+  - Next.js Production Build: **21/21 routes compiled & prerendered thành công**.
+  - Bộ kiểm thử Backend: **31/31 tests PASS (100%)** trong 9.06s.
+
 ## [0.6.1] - 2026-11-19
 ### Security & Reliability Hardening (Phase 5.1 Production Readiness Audit)
 - **Toàn vẹn khóa ngoại (Referential Integrity)**:

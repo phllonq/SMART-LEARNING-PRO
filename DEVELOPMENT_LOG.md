@@ -129,3 +129,56 @@
       8. Cancelled assignment submission safety.
     - Executed entire backend test suite: **31/31 tests PASSED in 8.22s** (exit code 0).
   - **Deliverables**: Created audit report `docs/PHASE_5_1_HARDENING_AUDIT.md`. Updated `DATABASE_SCHEMA.md`, `API_SPECIFICATION.md`, `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, `CHANGELOG.md`.
+
+
+## Session 8: Frontend Foundation Implementation (Phase 6)
+- **Timestamp**: 2026-11-19 10:30:00 - 11:45:00
+- **Action**:
+  - **Preflight & Architecture Planning**:
+    - Created `docs/PHASE_6_FRONTEND_PLAN.md` outlining project roadmap, routing architecture, and data contracts.
+    - Verified Node.js v22.14.0, npm 10.9.2, and backend readiness.
+  - **Frontend Scaffolding & Dependencies**:
+    - Initialized Next.js 16.4.6 App Router project with TypeScript strict mode, Tailwind CSS v4, and ESLint in `frontend/`.
+    - Installed core production dependencies: `@tanstack/react-query`, `lucide-react`, `clsx`, `tailwind-merge`, `react-hook-form`, `@hookform/resolvers`, `zod`, `katex`, `@types/katex`.
+    - Configured `.env.example` and `.env.local` pointing to live backend `http://localhost:8000/api/v1`.
+  - **Design System & Reusable Components**:
+    - Configured custom theme variables and KaTeX styles in `frontend/src/app/globals.css`.
+    - Created typed UI primitives under `frontend/src/components/ui/` (`Button`, `Card`, `Badge`, `Input`, `Dialog`, `Skeleton`).
+    - Implemented shared domain components under `frontend/src/components/shared/`:
+      - `MathKaTeX`: International KaTeX math formula parser supporting raw LaTeX, `$inline$`, and `$$display$$`.
+      - `StatCard`: Visual KPI display cards.
+      - `EmptyState`: Clean illustrated empty state views with actionable CTAs.
+  - **API Client & Authentication Engine**:
+    - Created `frontend/src/types/index.ts`: Strict TypeScript interfaces for Users, Classrooms, Assignments, Exams, Questions, and Curriculum.
+    - Created `frontend/src/lib/api/client.ts`: Dual-mode client supporting both `Authorization: Bearer` and `credentials: "include"` for cookies, with structured error extraction.
+    - Created domain API services: `auth.ts`, `classrooms.ts`, `assignments.ts`, `exams.ts`, `curriculum.ts`, `questions.ts`.
+    - Created `frontend/src/lib/auth/auth-context.tsx`: React 19-safe authentication state machine with session recovery, role redirection, and logout.
+    - Wrapped application in `Providers` (`QueryClientProvider` + `AuthProvider`) in `layout.tsx`.
+  - **Portal Implementation**:
+    - **Public Landing (`/`)**: Hero section, value propositions, and quick demo credentials.
+    - **Authentication**: `/login` (with student, teacher, admin quick-fill pills) and `/register` (role-adaptive student/teacher signup).
+    - **Student Portal (`/student/*`)**:
+      - Dashboard: Gamification streak & XP cards, joined classrooms preview, available practice exams.
+      - Classrooms: List joined classes, join by invite code modal (`SL-XXXXXX`), leave class action.
+      - Assignments: Filter assignments, relative deadline status badges, duration, score.
+      - Courses: Grade 6-12 GDPT 2018 subject explorer.
+      - Exams: Exam lobby with duration, question count, and attempt launcher.
+      - Profile: Student metrics, gamification level, join date, account details.
+    - **Teacher Portal (`/teacher/*`)**:
+      - Dashboard: Overview of owned classrooms, total students, exam & question bank metrics.
+      - Classrooms: Owned classes list, "Create Classroom" modal (`POST /classrooms`).
+      - Classroom Detail (`[id]`): Prominent invite code display with copy & regenerate code, student roster with removal, assignments tab with "Giao bài tập mới" modal.
+      - Assignments: Cross-classroom homework overview, publish/cancel controls, and gradebook shortcuts.
+      - Exams: Exam matrix bank, publish to practice controls, "Tạo đề thi mới" modal.
+      - Questions: Question Bank explorer with KaTeX math rendering, difficulty filtering, search, and answer key highlights.
+      - Students: Consolidated student roster across all classrooms.
+      - Profile: Teacher certification and system details.
+    - **Admin Portal (`/admin/*`)**: System telemetry, live backend health check monitor (`/health`), and fast portal switcher.
+  - **Quality Gates & Verification**:
+    - `npm run type-check` (`tsc --noEmit`): **0 errors, EXIT CODE 0**.
+    - `npm run lint` (`eslint`): **0 errors, 0 warnings, EXIT CODE 0**.
+    - `npm run build` (`next build`): **21/21 routes generated, EXIT CODE 0**.
+    - Backend integration suite (`pytest -c backend/pytest.ini backend/tests`): **31/31 passed in 9.06s (100% PASS), EXIT CODE 0**.
+  - **Documentation**:
+    - Created `docs/FRONTEND_ARCHITECTURE.md` and `docs/FRONTEND_API_INTEGRATION.md`.
+    - Updated `PROJECT_STATUS.md`, `TASK_TRACKER.md`, `DEVELOPMENT_LOG.md`, `CHANGELOG.md`, `README.md`.

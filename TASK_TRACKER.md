@@ -15,11 +15,20 @@
 - [x] Design Complete Database Schema with 26 tables (`docs/DATABASE_SCHEMA.md`)
 - [x] Define REST API endpoints & contracts (`docs/API_SPECIFICATION.md`)
 
-## Phase 2: Design System & Frontend Foundation
-- [ ] Setup Next.js with TypeScript, Tailwind CSS, Lucide icons, KaTeX
-- [ ] Implement Design System tokens (Primary #635BFF, Navy #0F172A, Bg #F8FAFC)
-- [ ] Create UI component library (Button, Card, Input, Modal, Dropdown, Table, Badge)
-- [ ] Setup Layouts (Public Landing, Student Portal, Teacher Portal, Admin Portal)
+## Phase 2 & 6: Frontend Foundation & Design System
+- [x] Setup Next.js 16 App Router with TypeScript Strict Mode, Tailwind CSS v4, Lucide icons, KaTeX
+- [x] Implement Design System tokens and custom colors in `globals.css`
+- [x] Create atomic UI component library (`Button`, `Card`, `Input`, `Dialog/Modal`, `Badge`, `Skeleton`)
+- [x] Create shared domain components (`MathKaTeX`, `StatCard`, `EmptyState`)
+- [x] Build central API client with Bearer + Cookie authentication & error handling (`lib/api/client.ts`)
+- [x] Build typed API services (`auth.ts`, `classrooms.ts`, `assignments.ts`, `exams.ts`, `curriculum.ts`, `questions.ts`)
+- [x] Setup TanStack Query and React 19-safe AuthContext state machine
+- [x] Build Public Landing Page (`/`) with role entry points and demo accounts
+- [x] Build Authentication pages: `/login` (with quick-fill pills) and `/register` (role-adaptive)
+- [x] Build Student Portal (`/student/*`): Dashboard, Classrooms with join modal, Assignments with due countdown, GDPT 2018 Courses, Exams lobby, Profile
+- [x] Build Teacher Portal (`/teacher/*`): Dashboard, Classrooms CRUD with invite code generator, Classroom Detail view with member roster & assignments, Assignment manager & gradebook, Exam bank, Question bank with KaTeX math formula preview, Aggregate students list, Profile
+- [x] Build Admin Portal (`/admin/*`): Telemetry dashboard, Backend health monitor, Fast portal switcher
+- [x] Run Frontend Quality Gates: TypeScript check (0 errors), ESLint (0 errors, 0 warnings), Next.js Build (21/21 routes generated, EXIT CODE 0)
 
 ## Phase 3: Core Foundation (Backend & Auth)
 - [x] Setup FastAPI Modular Monolith backend structure
@@ -46,52 +55,20 @@
 - [x] Teacher Exam Management & RBAC (`/api/v1/exams` - CRUD, add/remove questions, publish/archive, submissions review)
 - [x] Examination Automated Tests (2 comprehensive test suites, 100% pass)
 
-## Phase 5: Teacher & Admin Portals
+## Phase 5: Teacher & Admin Backend Modules
 - [x] Classroom & Assignment models seeded & evolved with migration
-- [x] Classroom API Router (`/api/v1/classrooms/*` - CRUD, invite code generation/regeneration, join with capacity check, leave, member management, statistics)
-- [x] Assignment API Router (`/api/v1/classrooms/{id}/assignments`, `/api/v1/assignments/*` - Homework creation from exams, open/due dates, max attempts, late policy, review policy, publish/cancel)
-- [x] Student Assignment Workflow (start, autosave, submission, auto-grading, review policy)
-- [x] Teacher Gradebook & Submissions Review (`/api/v1/assignments/{id}/submissions`)
-- [x] Automated Tests for Classrooms & Assignments (4 comprehensive test suites, 100% pass)
-- [x] **Phase 5.1 Hardening & Production Readiness Audit**:
-  - [x] SQLite Foreign Key Enforcement (`PRAGMA foreign_keys=ON` per connection)
-  - [x] Database Migration Hardening (`scripts/migrate_hardening.py` - idempotent migration)
-  - [x] Immutable Snapshot Grading (`answer_key_snapshot_json` decouples grading from future Question Bank edits)
-  - [x] Concurrency & Partial Unique Indexes (`uq_active_exam_attempt`, `uq_active_assignment_attempt`)
-  - [x] Out-of-order delayed autosave protection
-  - [x] Capacity limit race condition protection (pre-check + atomic post-flush count verification)
-  - [x] Submission Review endpoint (`GET /api/v1/exams/attempts/{id}/review`) with anti-IDOR protection
-  - [x] Dedicated Audit Test Suite (`backend/tests/test_hardening_audit.py` - 8/8 tests, 100% pass)
-  - [x] Audit Report documentation (`docs/PHASE_5_1_HARDENING_AUDIT.md`)
-- [ ] Admin User Management & Curriculum Admin Routers
+- [x] Classroom API Router (`/api/v1/classrooms/*` - CRUD, invite code generation, join with capacity validation, member management, leaving, statistics)
+- [x] Homework Assignment API Router (`/api/v1/assignments/*` - Create, publish, cancel, student take, submissions gradebook)
+- [x] Classroom & Assignment Automated Tests (4 test suites, 100% pass)
 
-## Phase 6: AI Engine & Gemini Integration
-- [x] AI models (Conversations, Messages, Usage Logs, Knowledge Chunks) created
-- [ ] Google Gemini API Service Client (`gemini-1.5-flash` & `gemini-1.5-pro`)
-- [ ] Wrong Answer Diagnostics Engine (Socratic reasoning, structured JSON output)
-- [ ] AI Tutor Chat router & RAG context retriever
-- [ ] AI Usage Monitoring & Cost tracking
+## Phase 5.1: Concurrency & Hardening Audit
+- [x] SQLite active foreign keys (`PRAGMA foreign_keys=ON`) via SQLAlchemy connection listener
+- [x] Concurrency safety: atomic classroom join capacity limit & single-student uniqueness
+- [x] Exam attempt isolation: immutable answer key snapshot (`answer_key_snapshot_json`) decoupled from Question Bank edits
+- [x] Out-of-order network autosave packet protection
+- [x] Idempotent migration verification & 31/31 backend tests passing
 
-## Phase 7: Intelligent Learning Features
-- [x] Topic Mastery & Knowledge Gap models created
-- [ ] Knowledge Gap Detection algorithm
-- [ ] Topic Mastery real-time update on exam submission
-- [ ] Adaptive Practice recommendation engine
-
-## Phase 8: Gamification, Notifications & Polish
-- [x] Gamification & Notification models created
-- [ ] Streak calculation & XP award service
-- [ ] Notification creation & mark-as-read APIs
-
-## Phase 9: Testing & Security Audits
-- [x] Automated test suite setup with pytest & pytest-asyncio
-- [x] Auth flow unit & integration tests passing (100%)
-- [x] Health check test passing (100%)
-- [x] RBAC permission tests passing (100%)
-- [x] Learning modules & grading integration tests (Curriculum: 8 suites, Questions: 6 suites, Exams: 2 suites - All PASS)
-- [ ] AI engine fallback tests
-
-## Phase 10: Docker & Release Readiness
-- [ ] Dockerfiles for Backend & Frontend
-- [ ] docker-compose.yml with PostgreSQL + pgvector, Redis, Backend, Frontend
-- [ ] Windows PowerShell launch script
+## Phase 7: AI Engine (Next Phase)
+- [ ] Gemini API integration for automated question diagnosis
+- [ ] Socratic AI Tutor interactive chat
+- [ ] Spaced repetition and adaptive learning suggestions
