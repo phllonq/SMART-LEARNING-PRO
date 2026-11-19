@@ -52,10 +52,11 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
   const [currentQIndex, setCurrentQIndex] = useState(0);
   const [localAnswers, setLocalAnswers] = useState<Record<string, SavedAnswerItem>>({});
   const [localSaveStatuses, setLocalSaveStatuses] = useState<
-    Record<string, "SAVED" | "SAVING" | "ERROR">
+    Record<string, "SAVED" | "SAVING" | "ERROR" | "CONFLICT">
   >({});
   const versionCounters = useRef<Record<string, number>>({});
   const textDebounceTimers = useRef<Record<string, NodeJS.Timeout>>({});
+  const pendingTextSaves = useRef<Record<string, { text: string; flagged?: boolean }>>({});
 
   // Clean up debounce timers on unmount
   useEffect(() => {
@@ -85,6 +86,18 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
     retry: false,
   });
 
+  // Synchronize versionCounters from server state on load and reload
+  useEffect(() => {
+    if (attempt?.saved_answers) {
+      for (const [qid, ans] of Object.entries(attempt.saved_answers)) {
+        const serverVer = typeof ans.version === "number" ? ans.version : 1;
+        if (serverVer > (versionCounters.current[qid] || 0)) {
+          versionCounters.current[qid] = serverVer;
+        }
+      }
+    }
+  }, [attempt?.saved_answers]);
+
   // Merge server saved answers with local interactive answers
   const selectedAnswers = useMemo(() => {
     return {
@@ -95,12 +108,158 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
 
   // Derive save status: local status takes precedence, otherwise if in server saved_answers it's SAVED
   const getSaveStatus = useCallback(
-    (qid: string) => {
+    (qid: string): "SAVED" | "SAVING" | "ERROR" | "CONFLICT" | "IDLE" => {
       if (localSaveStatuses[qid]) return localSaveStatuses[qid];
       if (attempt?.saved_answers?.[qid]) return "SAVED";
       return "IDLE";
     },
     [localSaveStatuses, attempt?.saved_answers]
+  );
+
+  // Safe Autosave Handler with atomic OCC versioning
+  const handleSaveAnswer = useCallback(
+    async (
+      questionId: string,
+      optionId?: string | null,
+      optionIds?: string[] | null,
+      text?: string | null,
+      flagged?: boolean
+    ) => {
+      if (!attempt || attempt.status !== "IN_PROGRESS") return;
+
+      // Base version from versionCounters or server saved_answers
+      const baseVersion = Math.max(
+        versionCounters.current[questionId] || 0,
+        attempt.saved_answers?.[questionId]?.version || 0
+      );
+      const expectedVersion = baseVersion > 0 ? baseVersion : undefined;
+      const clientVersion = baseVersion + 1;
+      versionCounters.current[questionId] = clientVersion;
+
+      // Update local state immediately for responsive UI
+      const existing = selectedAnswers[questionId] || {
+        is_flagged: false,
+        time_spent_seconds: 0,
+      };
+
+      const newAnswer: SavedAnswerItem = {
+        selected_option_id:
+          optionId !== undefined ? optionId : existing.selected_option_id,
+        selected_option_ids:
+          optionIds !== undefined ? optionIds : existing.selected_option_ids,
+        answer_text: text !== undefined ? text : existing.answer_text,
+        is_flagged: flagged !== undefined ? flagged : existing.is_flagged,
+        time_spent_seconds: Math.floor((Date.now() - startTimeRef) / 1000),
+        version: clientVersion,
+      };
+
+      setLocalAnswers((prev) => ({
+        ...prev,
+        [questionId]: newAnswer,
+      }));
+
+      setLocalSaveStatuses((prev) => ({
+        ...prev,
+        [questionId]: "SAVING",
+      }));
+
+      try {
+        const response = await examsApi.autosaveAnswer(attemptId, questionId, {
+          selected_option_id: newAnswer.selected_option_id,
+          selected_option_ids: newAnswer.selected_option_ids,
+          answer_text: newAnswer.answer_text,
+          is_flagged: newAnswer.is_flagged,
+          time_spent_seconds: newAnswer.time_spent_seconds,
+          client_version: clientVersion,
+          expected_version: expectedVersion,
+        });
+
+        // Sync authoritative version from server
+        if (response.version && response.version > (versionCounters.current[questionId] || 0)) {
+          versionCounters.current[questionId] = response.version;
+        }
+
+        // Only update UI status if this response corresponds to the latest requested version
+        if (
+          versionCounters.current[questionId] === response.version ||
+          versionCounters.current[questionId] === clientVersion
+        ) {
+          if (response.status === "SAVED") {
+            setLocalSaveStatuses((prev) => ({
+              ...prev,
+              [questionId]: "SAVED",
+            }));
+          } else if (response.status === "VERSION_CONFLICT" || response.status === "STALE_IGNORED") {
+            setLocalSaveStatuses((prev) => ({
+              ...prev,
+              [questionId]: "CONFLICT",
+            }));
+          } else {
+            setLocalSaveStatuses((prev) => ({
+              ...prev,
+              [questionId]: "ERROR",
+            }));
+          }
+        }
+      } catch {
+        if (versionCounters.current[questionId] === clientVersion) {
+          setLocalSaveStatuses((prev) => ({
+            ...prev,
+            [questionId]: "ERROR",
+          }));
+        }
+      }
+    },
+    [attempt, attemptId, selectedAnswers, startTimeRef]
+  );
+
+  // Debounced Short Answer text handler (400ms debounce)
+  const handleTextChange = useCallback(
+    (questionId: string, text: string) => {
+      const existing = selectedAnswers[questionId] || {
+        is_flagged: false,
+        time_spent_seconds: 0,
+      };
+
+      const newAnswer: SavedAnswerItem = {
+        ...existing,
+        answer_text: text,
+        time_spent_seconds: Math.floor((Date.now() - startTimeRef) / 1000),
+      };
+
+      setLocalAnswers((prev) => ({
+        ...prev,
+        [questionId]: newAnswer,
+      }));
+
+      setLocalSaveStatuses((prev) => ({
+        ...prev,
+        [questionId]: "SAVING",
+      }));
+
+      // Record pending save for drain/flush before submit
+      pendingTextSaves.current[questionId] = {
+        text,
+        flagged: existing.is_flagged,
+      };
+
+      if (textDebounceTimers.current[questionId]) {
+        clearTimeout(textDebounceTimers.current[questionId]);
+      }
+
+      textDebounceTimers.current[questionId] = setTimeout(() => {
+        delete pendingTextSaves.current[questionId];
+        delete textDebounceTimers.current[questionId];
+        handleSaveAnswer(
+          questionId,
+          undefined,
+          undefined,
+          text,
+          existing.is_flagged
+        );
+      }, 400);
+    },
+    [handleSaveAnswer, selectedAnswers, startTimeRef]
   );
 
   // Submit Attempt
@@ -109,8 +268,21 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
     setIsSubmitting(true);
     setSubmitError(null);
 
-    // Clear any pending debounced autosaves
-    Object.values(textDebounceTimers.current).forEach((t) => clearTimeout(t));
+    // Drain/flush any pending debounced autosaves before final submission
+    const flushPromises: Promise<unknown>[] = [];
+    for (const [qid, pending] of Object.entries(pendingTextSaves.current)) {
+      if (textDebounceTimers.current[qid]) {
+        clearTimeout(textDebounceTimers.current[qid]);
+        delete textDebounceTimers.current[qid];
+      }
+      delete pendingTextSaves.current[qid];
+      flushPromises.push(
+        handleSaveAnswer(qid, undefined, undefined, pending.text, pending.flagged)
+      );
+    }
+    if (flushPromises.length > 0) {
+      await Promise.allSettled(flushPromises);
+    }
 
     try {
       const result = await examsApi.submitAttempt(attemptId);
@@ -133,7 +305,7 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
           "Không thể nộp bài thi. Vui lòng thử lại."
       );
     }
-  }, [attemptId, isSubmitting, queryClient]);
+  }, [attemptId, isSubmitting, queryClient, handleSaveAnswer]);
 
   // If attempt was already submitted/graded before opening, fetch review or submit result
   useEffect(() => {
@@ -187,118 +359,6 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
       .toString()
       .padStart(2, "0")}`;
   };
-
-  // Safe Autosave Handler with atomic versioning
-  const handleSaveAnswer = useCallback(
-    async (
-      questionId: string,
-      optionId?: string | null,
-      optionIds?: string[] | null,
-      text?: string | null,
-      flagged?: boolean
-    ) => {
-      if (!attempt || attempt.status !== "IN_PROGRESS") return;
-
-      const currentVersion = (versionCounters.current[questionId] || 0) + 1;
-      versionCounters.current[questionId] = currentVersion;
-
-      // Update local state immediately for responsive UI
-      const existing = selectedAnswers[questionId] || {
-        is_flagged: false,
-        time_spent_seconds: 0,
-      };
-
-      const newAnswer: SavedAnswerItem = {
-        selected_option_id:
-          optionId !== undefined ? optionId : existing.selected_option_id,
-        selected_option_ids:
-          optionIds !== undefined ? optionIds : existing.selected_option_ids,
-        answer_text: text !== undefined ? text : existing.answer_text,
-        is_flagged: flagged !== undefined ? flagged : existing.is_flagged,
-        time_spent_seconds: Math.floor((Date.now() - startTimeRef) / 1000),
-      };
-
-      setLocalAnswers((prev) => ({
-        ...prev,
-        [questionId]: newAnswer,
-      }));
-
-      setLocalSaveStatuses((prev) => ({
-        ...prev,
-        [questionId]: "SAVING",
-      }));
-
-      try {
-        const response = await examsApi.autosaveAnswer(attemptId, questionId, {
-          selected_option_id: newAnswer.selected_option_id,
-          selected_option_ids: newAnswer.selected_option_ids,
-          answer_text: newAnswer.answer_text,
-          is_flagged: newAnswer.is_flagged,
-          time_spent_seconds: newAnswer.time_spent_seconds,
-          client_version: currentVersion,
-        });
-
-        // Ensure this response is for the latest requested version to prevent race conditions
-        if (versionCounters.current[questionId] === currentVersion) {
-          if (response.status === "SAVED") {
-            setLocalSaveStatuses((prev) => ({
-              ...prev,
-              [questionId]: "SAVED",
-            }));
-          }
-        }
-      } catch {
-        if (versionCounters.current[questionId] === currentVersion) {
-          setLocalSaveStatuses((prev) => ({
-            ...prev,
-            [questionId]: "ERROR",
-          }));
-        }
-      }
-    },
-    [attempt, attemptId, selectedAnswers, startTimeRef]
-  );
-
-  // Debounced Short Answer text handler (400ms debounce)
-  const handleTextChange = useCallback(
-    (questionId: string, text: string) => {
-      const existing = selectedAnswers[questionId] || {
-        is_flagged: false,
-        time_spent_seconds: 0,
-      };
-
-      const newAnswer: SavedAnswerItem = {
-        ...existing,
-        answer_text: text,
-        time_spent_seconds: Math.floor((Date.now() - startTimeRef) / 1000),
-      };
-
-      setLocalAnswers((prev) => ({
-        ...prev,
-        [questionId]: newAnswer,
-      }));
-
-      setLocalSaveStatuses((prev) => ({
-        ...prev,
-        [questionId]: "SAVING",
-      }));
-
-      if (textDebounceTimers.current[questionId]) {
-        clearTimeout(textDebounceTimers.current[questionId]);
-      }
-
-      textDebounceTimers.current[questionId] = setTimeout(() => {
-        handleSaveAnswer(
-          questionId,
-          undefined,
-          undefined,
-          text,
-          existing.is_flagged
-        );
-      }, 400);
-    },
-    [handleSaveAnswer, selectedAnswers, startTimeRef]
-  );
 
   // Toggle Flag on Question
   const handleToggleFlag = (questionId: string) => {
@@ -617,6 +677,27 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
           <Loader2 className="h-3 w-3 animate-spin" />
           <span>Đang lưu...</span>
         </span>
+      );
+    }
+    if (currentSaveStatus === "CONFLICT") {
+      return (
+        <button
+          onClick={() =>
+            currentQId &&
+            handleSaveAnswer(
+              currentQId,
+              currentSaved?.selected_option_id,
+              currentSaved?.selected_option_ids,
+              currentSaved?.answer_text,
+              currentSaved?.is_flagged
+            )
+          }
+          title="Xung đột phiên bản lưu bài. Bấm để thử lại và ghi đè."
+          className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 hover:bg-amber-100 transition-colors"
+        >
+          <AlertTriangle className="h-3 w-3 text-amber-600" />
+          <span>Xung đột lưu (Thử lại)</span>
+        </button>
       );
     }
     if (currentSaveStatus === "ERROR") {

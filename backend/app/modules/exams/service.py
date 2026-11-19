@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Tuple, Dict, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_, or_, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 
@@ -534,12 +534,14 @@ async def autosave_answer(
     question_id: str,
     data: AutosaveAnswerRequest,
     student: User
-) -> StudentAnswer:
+) -> Tuple[str, StudentAnswer]:
     """
-    Autosave student answer in real-time:
+    Autosave student answer in real-time with atomic optimistic concurrency control (OCC):
     - Validates attempt is active and not expired.
     - Validates student ownership.
-    - Upserts answer safely.
+    - Atomically updates answer using conditional WHERE version = expected_version.
+    - Returns (status, answer) where status is:
+      'SAVED', 'STALE_IGNORED', or 'VERSION_CONFLICT'.
     """
     attempt, snapshot = await get_attempt_detail(db, attempt_id, user=student)
     if attempt.student_id != student.id:
@@ -580,50 +582,68 @@ async def autosave_answer(
             answer_text=data.answer_text,
             is_flagged=data.is_flagged,
             time_spent_seconds=data.time_spent_seconds,
-            version=req_version,
+            version=max(req_version, 1),
             answered_at=now
         )
         db.add(answer)
         try:
             await db.flush()
+            await db.refresh(answer)
+            return "SAVED", answer
         except IntegrityError:
-            # Race condition: concurrent autosave inserted the record between select and flush
+            # Race condition: concurrent autosave inserted the initial record between select and flush
             await db.rollback()
-            # Re-fetch the winning record and update it safely
+            # Re-fetch the winning record from DB
             ans_res2 = await db.execute(existing_query)
             answer = ans_res2.scalar_one()
-            # Discard stale packet if client_version is lower than current answer version
-            if data.client_version is not None and data.client_version < answer.version:
-                return answer
-            answer.selected_option_id = data.selected_option_id
-            answer.selected_option_ids_json = opt_ids_json
-            answer.answer_text = data.answer_text
-            answer.is_flagged = data.is_flagged
-            answer.time_spent_seconds = max(answer.time_spent_seconds, data.time_spent_seconds)
-            answer.version = max(answer.version + 1, req_version)
-            answer.answered_at = now
-            answer.updated_at = now
-            await db.flush()
-    else:
-        # Discard stale packet if client_version is lower than answer.version
-        if data.client_version is not None and data.client_version < answer.version:
-            return answer
-        # Fallback out-of-order protection if client_version is not provided
-        if data.client_version is None and data.time_spent_seconds < answer.time_spent_seconds:
-            return answer
 
-        answer.selected_option_id = data.selected_option_id
-        answer.selected_option_ids_json = opt_ids_json
-        answer.answer_text = data.answer_text
-        answer.is_flagged = data.is_flagged
-        answer.time_spent_seconds = max(answer.time_spent_seconds, data.time_spent_seconds)
-        answer.version = max(answer.version + 1, req_version)
-        answer.answered_at = now
-        answer.updated_at = now
-        await db.flush()
+    # Answer exists in database: execute atomic optimistic concurrency check & update
+    # 1. Explicit version conflict check if expected_version was specified by client
+    if data.expected_version is not None and data.expected_version != answer.version:
+        return "VERSION_CONFLICT", answer
 
-    await db.refresh(answer)
-    return answer
+    # 2. Stale packet check: client_version is strictly less than or equal to current answer.version
+    if data.client_version is not None and data.client_version <= answer.version:
+        return "STALE_IGNORED", answer
+
+    # Fallback out-of-order check if client_version was omitted
+    if data.client_version is None and data.time_spent_seconds < answer.time_spent_seconds:
+        return "STALE_IGNORED", answer
+
+    # 3. Atomic conditional UPDATE at database level
+    expected_version = answer.version
+    target_version = max(answer.version + 1, req_version)
+
+    stmt = (
+        update(StudentAnswer)
+        .where(
+            StudentAnswer.id == answer.id,
+            StudentAnswer.version == expected_version
+        )
+        .values(
+            selected_option_id=data.selected_option_id,
+            selected_option_ids_json=opt_ids_json,
+            answer_text=data.answer_text,
+            is_flagged=data.is_flagged,
+            time_spent_seconds=max(answer.time_spent_seconds, data.time_spent_seconds),
+            version=target_version,
+            answered_at=now,
+            updated_at=now
+        )
+    )
+    update_res = await db.execute(stmt)
+    if update_res.rowcount == 0:
+        # Concurrent update conflict: another transaction updated the row version concurrently
+        await db.rollback()
+        ans_res_conflict = await db.execute(existing_query)
+        conflicted_answer = ans_res_conflict.scalar_one()
+        return "VERSION_CONFLICT", conflicted_answer
+
+    await db.flush()
+    # Reload the updated answer from DB
+    ans_res_updated = await db.execute(existing_query)
+    updated_answer = ans_res_updated.scalar_one()
+    return "SAVED", updated_answer
 
 
 # ==============================================================================

@@ -1,5 +1,29 @@
 # CHANGELOG — SMART LEARNING PRO
 
+## [0.7.5] - 2026-11-19
+### Fixed & Hardened - Phase 6.3.4: Autosave Versioning & Data Consistency Remediation
+- **Khôi phục Phiên bản khi Tải lại Trang (Task A)**:
+  - Đồng bộ hóa `versionCounters.current` trong `StudentExamAttemptPage` (`page.tsx`) từ `attempt.saved_answers[qid].version` khi tải lần đầu hoặc nhấn F5.
+  - Loại bỏ hoàn toàn lỗi mất dữ liệu âm thầm (silent data loss) khi học sinh sửa đáp án sau khi reload trang.
+- **Cập nhật Có Điều kiện Cấp Cơ sở Dữ liệu (Database OCC - Task B)**:
+  - Thay thế kiểm tra phiên bản trên bộ nhớ Python bằng câu lệnh SQL nguyên tử: `UPDATE student_answers ... WHERE id = :id AND version = :expected_version`.
+  - Bắt ngoại lệ `IntegrityError` khi có 2 request khởi tạo bản ghi câu trả lời đầu tiên đồng thời, tự động rollback và cập nhật bản ghi đã tạo.
+- **Phản hồi Trạng thái Autosave Minh bạch (Task C)**:
+  - Máy chủ trả về chính xác trạng thái: `SAVED` (khi dữ liệu được ghi nhận vào DB), `VERSION_CONFLICT` (khi phiên bản DB đã thay đổi), `STALE_IGNORED` (gói tin trễ).
+  - Trả về payload câu trả lời thực tế đã lưu để client đối chiếu.
+- **Xử lý Xung đột và Xả Debounce trên Frontend (Task D & E)**:
+  - Bổ sung trạng thái `CONFLICT` trên giao diện với huy hiệu cảnh báo hổ phách và nút "Thử lại", cho phép gửi lại câu trả lời với phiên bản mới nhất mà không mất nội dung đã nhập.
+  - Bổ sung cơ chế xả bộ đệm (drain/flush) trong `handleFinalSubmit`: tự động gửi tất cả các nội dung tự luận ngắn đang chờ debounce trước khi thực hiện nộp bài thi.
+- **Kiểm thử Toàn diện & Tiêu chuẩn Chất lượng (Task F)**:
+  - Tạo bộ kiểm thử backend mới `backend/tests/test_autosave_remediation_634.py` (4/4 PASS).
+  - Mở rộng kịch bản E2E Playwright `frontend/e2e/exam-lifecycle.spec.ts` kiểm tra chu trình reload và đổi đáp án sau reload.
+  - Backend Pytest: **39/39 PASS trong 8.93s**.
+  - Frontend TypeScript: **0 errors**.
+  - Frontend ESLint: **0 errors, 0 warnings**.
+  - Next.js Production Build: **23/23 routes compiled thành công**.
+  - Playwright E2E: **36/36 PASS trong 16.0s**.
+- **Báo cáo Kỹ thuật**: Tạo [docs/PHASE_6_3_4_AUTOSAVE_REMEDIATION.md](file:///E:/SMART-LEARNING-PRO/docs/PHASE_6_3_4_AUTOSAVE_REMEDIATION.md).
+
 ## [0.7.4] - 2026-11-19
 ### Hardened & Fixed - Phase 6.3.2: Exam Engine Hardening & Remediation
 - **Bảo mật Đáp án SHORT_ANSWER (Task A)**:

@@ -165,6 +165,14 @@ test.describe("Stage A — Student Exam Interface & Lifecycle E2E (Phase 6.3)", 
     await expect(page.locator("text=Đã lưu máy chủ").first()).toBeVisible();
 
     // -------------------------------------------------------------------------
+    // Scenario 8: Change answer after reload (Phase 6.3.4 version restoration check)
+    // -------------------------------------------------------------------------
+    const secondOption = page.locator(".group.cursor-pointer").nth(1);
+    await secondOption.click();
+    await expect(page.locator("text=Đã lưu máy chủ").first()).toBeVisible({ timeout: 5000 });
+    await expect(secondOption).toHaveClass(/border-indigo-400/);
+
+    // -------------------------------------------------------------------------
     // Scenario 9: Submit confirmation dialog & execution
     // -------------------------------------------------------------------------
     const submitBtn = page.locator("button:has-text('Nộp bài')").first();

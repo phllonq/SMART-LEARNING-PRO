@@ -294,14 +294,18 @@ export interface AutosaveAnswerRequest {
   is_flagged?: boolean;
   time_spent_seconds?: number;
   client_version?: number;
+  expected_version?: number;
 }
 
 export interface AutosaveAnswerResponse {
   status: string;
   attempt_id: string;
   question_id: string;
-  version?: number;
+  version: number;
   saved_at: string;
+  selected_option_id?: string | null;
+  selected_option_ids?: string[] | null;
+  answer_text?: string | null;
 }
 
 export interface QuestionReviewItem {

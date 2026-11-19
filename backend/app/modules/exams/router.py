@@ -129,15 +129,24 @@ async def autosave(
 ):
     """
     Autosave student answer in real-time during an active examination attempt.
-    Enforces server-side deadline, idempotency, version incrementing and student ownership.
+    Enforces server-side deadline, idempotency, atomic optimistic concurrency control (OCC) and student ownership.
     """
-    answer = await autosave_answer(db, attempt_id, question_id, data, student=current_user)
+    save_status, answer = await autosave_answer(db, attempt_id, question_id, data, student=current_user)
+    opt_ids = None
+    if answer.selected_option_ids_json:
+        try:
+            opt_ids = json.loads(answer.selected_option_ids_json)
+        except Exception:
+            opt_ids = []
     return AutosaveAnswerResponse(
-        status="SAVED",
+        status=save_status,
         attempt_id=answer.attempt_id,
         question_id=answer.question_id,
         version=answer.version,
-        saved_at=answer.answered_at
+        saved_at=answer.answered_at or datetime.now(timezone.utc),
+        selected_option_id=answer.selected_option_id,
+        selected_option_ids=opt_ids,
+        answer_text=answer.answer_text
     )
 
 

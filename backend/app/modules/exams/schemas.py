@@ -113,6 +113,7 @@ class AutosaveAnswerRequest(BaseModel):
     is_flagged: bool = False
     time_spent_seconds: int = 0
     client_version: Optional[int] = None
+    expected_version: Optional[int] = None
 
 
 class AutosaveAnswerResponse(BaseModel):
@@ -121,6 +122,9 @@ class AutosaveAnswerResponse(BaseModel):
     question_id: str
     version: int = 1
     saved_at: datetime
+    selected_option_id: Optional[str] = None
+    selected_option_ids: Optional[List[str]] = None
+    answer_text: Optional[str] = None
 
 
 class ExamSubmitResponse(BaseModel):
