@@ -40,6 +40,7 @@ export function MathKaTeX({
           return katex.renderToString(content, {
             displayMode: block,
             throwOnError: false,
+            trust: false,
           });
         } catch {
           return escapeHtml(content);
@@ -64,6 +65,7 @@ export function MathKaTeX({
             return katex.renderToString(formula, {
               displayMode: true,
               throwOnError: false,
+              trust: false,
             });
           } catch {
             return `$$${escapeHtml(formula)}$$`;
@@ -77,6 +79,7 @@ export function MathKaTeX({
             return katex.renderToString(formula, {
               displayMode: false,
               throwOnError: false,
+              trust: false,
             });
           } catch {
             return `$${escapeHtml(formula)}$`;

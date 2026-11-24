@@ -42,11 +42,13 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     USE_IN_MEMORY_CACHE_FALLBACK: bool = True
 
-    # AI - GEMINI
+    # AI CONFIGURATION
+    AI_PROVIDER: str = Field(default="mock", validation_alias="AI_PROVIDER")  # "mock" or "google"
     GEMINI_API_KEY: str = Field(default="", validation_alias="GEMINI_API_KEY")
-    GEMINI_MODEL: str = "gemini-1.5-flash"
-    GEMINI_PRO_MODEL: str = "gemini-1.5-pro"
-    GEMINI_EMBEDDING_MODEL: str = "text-embedding-004"
+    GEMINI_MODEL: str = Field(default="gemini-3.8-flash", validation_alias="GEMINI_MODEL")
+    AI_TIMEOUT_SECONDS: float = Field(default=15.0, validation_alias="AI_TIMEOUT_SECONDS")
+    AI_MAX_RETRIES: int = Field(default=2, validation_alias="AI_MAX_RETRIES")
+    AI_RETRY_BACKOFF_BASE: float = Field(default=0.5, validation_alias="AI_RETRY_BACKOFF_BASE")
 
     # STORAGE
     STORAGE_TYPE: str = "local"

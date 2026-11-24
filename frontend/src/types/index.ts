@@ -343,3 +343,6 @@ export interface ExamSubmitResponse {
 export interface ApiError {
   detail: string | Array<{ msg: string; loc: string[] }>;
 }
+
+export * from "./ai-diagnostics";
+

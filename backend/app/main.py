@@ -15,6 +15,9 @@ from app.modules.curriculum.router import router as curriculum_router
 from app.modules.questions.router import router as questions_router
 from app.modules.exams.router import router as exams_router
 from app.modules.classrooms.router import classrooms_router, assignments_router
+from app.modules.ai_engine.diagnostics.router import router as ai_diagnostics_router
+from app.modules.ai_engine.diagnostics.exceptions import DiagnosticError
+from app.modules.ai_engine.exceptions import AIEngineException
 from sqlalchemy import select
 
 # Configure logging
@@ -81,6 +84,7 @@ app.include_router(questions_router, prefix=settings.API_V1_PREFIX)
 app.include_router(exams_router, prefix=settings.API_V1_PREFIX)
 app.include_router(classrooms_router, prefix=settings.API_V1_PREFIX)
 app.include_router(assignments_router, prefix=settings.API_V1_PREFIX)
+app.include_router(ai_diagnostics_router, prefix=settings.API_V1_PREFIX)
 
 
 # Health Check Endpoint
@@ -128,3 +132,18 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
         status_code=status.HTTP_409_CONFLICT,
         content={"detail": "Dữ liệu bị trùng lặp hoặc vi phạm ràng buộc toàn vẹn cơ sở dữ liệu."}
     )
+
+
+@app.exception_handler(DiagnosticError)
+async def diagnostic_error_handler(request: Request, exc: DiagnosticError):
+    logger.warning("DiagnosticError: [%d] %s", exc.status_code, exc.message)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+
+
+@app.exception_handler(AIEngineException)
+async def ai_engine_error_handler(request: Request, exc: AIEngineException):
+    status_code = exc.status_code or 503
+    if status_code == 500:
+        status_code = 503
+    logger.error("AIEngineException: [%d] %s", status_code, exc.message)
+    return JSONResponse(status_code=status_code, content={"detail": exc.message})

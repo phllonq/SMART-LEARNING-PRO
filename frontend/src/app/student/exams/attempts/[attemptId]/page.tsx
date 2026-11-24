@@ -25,12 +25,25 @@ import {
   Check,
   X,
   Loader2,
+  Sparkles,
 } from "lucide-react";
+import { WrongAnswerDiagnosticDrawer } from "@/components/student/exams/wrong-answer-diagnostic-drawer";
 import {
   ExamAttemptQuestion,
   ExamSubmitResponse,
   SavedAnswerItem,
 } from "@/types";
+
+/**
+ * Authoritative terminal attempt statuses from backend AttemptStatus enum:
+ * AttemptStatus.SUBMITTED, AttemptStatus.AUTO_SUBMITTED, AttemptStatus.GRADED, AttemptStatus.ABANDONED.
+ */
+export const TERMINAL_ATTEMPT_STATUSES = [
+  "SUBMITTED",
+  "AUTO_SUBMITTED",
+  "GRADED",
+  "ABANDONED",
+] as const;
 
 function parseServerDate(dateStr?: string | null): number {
   if (!dateStr) return Date.now();
@@ -79,6 +92,14 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
   const [submitResult, setSubmitResult] = useState<ExamSubmitResponse | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [startTimeRef] = useState<number>(() => Date.now());
+
+  // AI Diagnostic Drawer state
+  const [diagnosticDrawerOpen, setDiagnosticDrawerOpen] = useState(false);
+  const [selectedDiagnosticQuestion, setSelectedDiagnosticQuestion] = useState<{
+    questionId: string;
+    questionContent: string;
+    questionIndex: number;
+  } | null>(null);
 
   // Fetch attempt detail
   const {
@@ -713,6 +734,36 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
                         </div>
                       </div>
                     )}
+
+                    {/* AI Diagnostic Trigger Button - Strictly protected by reviewAllowed, terminal status, valid IDs, and incorrect answers */}
+                    {reviewAllowed === true &&
+                      (Boolean(submitResult) ||
+                        (Boolean(attempt?.status) &&
+                          attempt?.status !== "IN_PROGRESS" &&
+                          TERMINAL_ATTEMPT_STATUSES.includes(attempt!.status as (typeof TERMINAL_ATTEMPT_STATUSES)[number]))) &&
+                      q.is_correct === false &&
+                      Boolean(attemptId) &&
+                      Boolean(q.question_id) && (
+                        <div className="pt-2 flex justify-end">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            data-testid={`ai-diagnostic-btn-${q.question_id}`}
+                            className="gap-2 border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100/70 text-indigo-700 hover:text-indigo-800 font-medium text-xs shadow-2xs transition-colors"
+                            onClick={() => {
+                              setSelectedDiagnosticQuestion({
+                                questionId: q.question_id,
+                                questionContent: q.content,
+                                questionIndex: idx + 1,
+                              });
+                              setDiagnosticDrawerOpen(true);
+                            }}
+                          >
+                            <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+                            <span>Phân tích lỗi sai bằng AI</span>
+                          </Button>
+                        </div>
+                      )}
                   </CardContent>
                 </Card>
               ))}
@@ -728,6 +779,16 @@ export default function StudentExamAttemptPage({ params }: PageProps) {
             </p>
           </Card>
         )}
+
+        {/* Wrong Answer Diagnostic Drawer */}
+        <WrongAnswerDiagnosticDrawer
+          isOpen={diagnosticDrawerOpen}
+          onClose={() => setDiagnosticDrawerOpen(false)}
+          attemptId={attemptId}
+          questionId={selectedDiagnosticQuestion?.questionId ?? null}
+          questionContent={selectedDiagnosticQuestion?.questionContent ?? null}
+          questionIndex={selectedDiagnosticQuestion?.questionIndex}
+        />
       </div>
     );
   }
