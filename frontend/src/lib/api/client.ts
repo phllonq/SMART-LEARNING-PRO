@@ -31,13 +31,22 @@ interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined | null>;
 }
 
+function buildApiUrl(endpoint: string): string {
+  const base = API_BASE_URL.replace(/\/+$/, "");
+  let path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  if (base.endsWith("/api/v1") && path.startsWith("/api/v1/")) {
+    path = path.slice("/api/v1".length);
+  }
+  return `${base}${path}`;
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestOptions = {}
 ): Promise<T> {
   const { params, headers, ...restOptions } = options;
 
-  let url = `${API_BASE_URL}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
+  let url = buildApiUrl(endpoint);
 
   if (params) {
     const searchParams = new URLSearchParams();
@@ -53,8 +62,10 @@ async function request<T>(
   }
 
   const token = getAuthToken();
+  const isFormData =
+    typeof FormData !== "undefined" && restOptions.body instanceof FormData;
   const requestHeaders: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     Accept: "application/json",
     ...(headers as Record<string, string>),
   };
@@ -118,6 +129,66 @@ export const apiClient = {
       method: "POST",
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
+  },
+
+  postForm<T>(
+    endpoint: string,
+    formData: FormData,
+    options?: RequestOptions
+  ): Promise<T> {
+    return request<T>(endpoint, {
+      ...options,
+      method: "POST",
+      body: formData,
+    });
+  },
+
+  async downloadFile(endpoint: string, fallbackFilename?: string): Promise<void> {
+    const url = buildApiUrl(endpoint);
+    const token = getAuthToken();
+    const requestHeaders: Record<string, string> = {};
+    if (token) {
+      requestHeaders["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: requestHeaders,
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      let msg = `Tải tệp thất bại (mã ${response.status})`;
+      try {
+        const errData = await response.json();
+        if (typeof errData?.detail === "string") {
+          msg = errData.detail;
+        }
+      } catch {
+        // ignore JSON parse failure
+      }
+      throw new ApiClientError(response.status, msg);
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get("content-disposition") || "";
+    let filename = fallbackFilename || "download";
+    const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    const asciiMatch = disposition.match(/filename="?([^";]+)"?/i);
+    if (utf8Match?.[1]) {
+      filename = decodeURIComponent(utf8Match[1]);
+    } else if (asciiMatch?.[1]) {
+      filename = asciiMatch[1];
+    }
+
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(blobUrl);
   },
 
   put<T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T> {

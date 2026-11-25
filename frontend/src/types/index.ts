@@ -71,14 +71,34 @@ export interface ClassroomCreate {
   max_students?: number;
 }
 
+export interface FileSubmission {
+  id: string;
+  assignment_id: string;
+  student_id: string;
+  file_name: string;
+  file_size: number;
+  content_type?: string | null;
+  download_url: string;
+  student_note?: string | null;
+  status: "SUBMITTED" | "GRADED" | string;
+  score?: number | null;
+  teacher_feedback?: string | null;
+  submitted_at: string;
+  graded_at?: string | null;
+}
+
 export interface AssignmentSummary {
   id: string;
   classroom_id: string;
   classroom_name?: string | null;
-  exam_id: string;
+  assignment_type: "EXAM" | "FILE" | string;
+  exam_id?: string | null;
   exam_title?: string | null;
   title: string;
   description?: string | null;
+  attachment_name?: string | null;
+  has_attachment?: boolean;
+  attachment_download_url?: string | null;
   open_date?: string | null;
   due_date: string;
   max_attempts: number;
@@ -92,6 +112,7 @@ export interface AssignmentSummary {
   my_status?: "NOT_STARTED" | "IN_PROGRESS" | "SUBMITTED" | "GRADED" | null;
   my_score?: number | null;
   my_attempts_count: number;
+  my_file_submission?: FileSubmission | null;
   created_at: string;
   updated_at: string;
 }
@@ -112,6 +133,7 @@ export interface AssignmentSubmissionItem {
   student_id: string;
   student_name: string;
   student_email: string;
+  assignment_type?: "EXAM" | "FILE" | string;
   status: string;
   attempt_id?: string | null;
   attempt_number: number;
@@ -121,11 +143,14 @@ export interface AssignmentSubmissionItem {
   started_at?: string | null;
   submitted_at?: string | null;
   time_spent_seconds: number;
+  file_submission?: FileSubmission | null;
 }
 
 export interface AssignmentSubmissionsResponse {
   assignment_id: string;
   assignment_title: string;
+  assignment_type?: "EXAM" | "FILE" | string;
+  maximum_score?: number;
   due_date: string;
   total_students: number;
   submitted_count: number;
@@ -133,6 +158,108 @@ export interface AssignmentSubmissionsResponse {
   not_started_count: number;
   average_score: number;
   items: AssignmentSubmissionItem[];
+}
+
+export interface ImportedQuestionError {
+  index: number;
+  raw_preview: string;
+  error: string;
+}
+
+export interface QuestionImportPreviewItem {
+  question_type: QuestionType;
+  content: string;
+  difficulty_level: DifficultyLevel;
+  explanation?: string | null;
+  hint?: string | null;
+  tags?: string | null;
+  options: Array<{
+    option_key: string;
+    content: string;
+    is_correct: boolean;
+    order_index: number;
+  }>;
+}
+
+export interface QuestionImportResponse {
+  dry_run: boolean;
+  total_detected: number;
+  imported_count: number;
+  failed_count: number;
+  errors: ImportedQuestionError[];
+  questions: Question[];
+  preview_questions: QuestionImportPreviewItem[];
+}
+
+export interface ExamImportResponse {
+  exam: ExamSummary;
+  total_detected?: number;
+  imported_questions_count: number;
+  failed_count: number;
+  errors: ImportedQuestionError[];
+}
+
+export interface DraftQuizOption {
+  option_key: string;
+  content: string;
+  is_correct: boolean;
+  order_index: number;
+}
+
+export interface DraftQuizQuestion {
+  content: string;
+  question_type: QuestionType;
+  difficulty_level: DifficultyLevel;
+  options: DraftQuizOption[];
+  explanation?: string | null;
+  hint?: string | null;
+  tags?: string | null;
+  has_correct_answer: boolean;
+  warning?: string | null;
+}
+
+export interface ExamConvertPreviewResponse {
+  suggested_title: string;
+  total_detected: number;
+  ready_count: number;
+  needs_answer_count: number;
+  extraction_method: string;
+  ai_used: boolean;
+  ai_available: boolean;
+  draft_questions: DraftQuizQuestion[];
+  errors: ImportedQuestionError[];
+}
+
+export interface ExamConvertConfirmRequest {
+  title: string;
+  description?: string;
+  subject_id?: string;
+  grade_id?: number;
+  duration_minutes?: number;
+  total_points?: number;
+  passing_points?: number;
+  publish_now?: boolean;
+  questions: Array<{
+    content: string;
+    question_type: QuestionType;
+    difficulty_level: DifficultyLevel;
+    options: DraftQuizOption[];
+    explanation?: string | null;
+    hint?: string | null;
+    tags?: string | null;
+    is_public?: boolean;
+  }>;
+  classroom_id?: string;
+  assignment_title?: string;
+  due_date?: string;
+  allow_late_submission?: boolean;
+}
+
+export interface ExamConvertConfirmResponse {
+  exam: ExamSummary;
+  imported_questions_count: number;
+  assignment_id?: string | null;
+  classroom_id?: string | null;
 }
 
 export interface ExamSummary {

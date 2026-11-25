@@ -104,8 +104,12 @@ class AssignmentSummaryResponse(BaseModel):
     id: str
     classroom_id: str
     classroom_name: Optional[str] = None
-    exam_id: str
+    assignment_type: str = "EXAM"
+    exam_id: Optional[str] = None
     exam_title: Optional[str] = None
+    attachment_name: Optional[str] = None
+    has_attachment: bool = False
+    attachment_download_url: Optional[str] = None
     title: str
     description: Optional[str] = None
     open_date: Optional[datetime] = None
@@ -121,10 +125,34 @@ class AssignmentSummaryResponse(BaseModel):
     my_status: Optional[str] = None  # NOT_STARTED, IN_PROGRESS, SUBMITTED, GRADED
     my_score: Optional[float] = None
     my_attempts_count: int = 0
+    my_file_submission: Optional["FileSubmissionResponse"] = None
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class FileSubmissionResponse(BaseModel):
+    id: str
+    assignment_id: str
+    student_id: str
+    file_name: str
+    file_size: int
+    content_type: Optional[str] = None
+    student_note: Optional[str] = None
+    status: str
+    score: Optional[float] = None
+    teacher_feedback: Optional[str] = None
+    submitted_at: datetime
+    graded_at: Optional[datetime] = None
+    download_url: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FileSubmissionGradeRequest(BaseModel):
+    score: float = Field(..., ge=0.0, le=100.0, description="Điểm chấm cho bài nộp")
+    teacher_feedback: Optional[str] = Field(None, max_length=2000, description="Nhận xét của giáo viên")
 
 
 class AssignmentSubmissionItem(BaseModel):
@@ -134,17 +162,25 @@ class AssignmentSubmissionItem(BaseModel):
     status: str  # NOT_STARTED, IN_PROGRESS, SUBMITTED, GRADED
     attempt_id: Optional[str] = None
     attempt_number: int = 0
+    file_submission_id: Optional[str] = None
+    submitted_file_name: Optional[str] = None
+    submitted_file_size: Optional[int] = None
+    student_note: Optional[str] = None
+    teacher_feedback: Optional[str] = None
+    download_url: Optional[str] = None
     score: Optional[float] = None
     maximum_score: float = 10.0
     is_passed: bool = False
     started_at: Optional[datetime] = None
     submitted_at: Optional[datetime] = None
     time_spent_seconds: int = 0
+    file_submission: Optional[FileSubmissionResponse] = None
 
 
 class AssignmentSubmissionsResponse(BaseModel):
     assignment_id: str
     assignment_title: str
+    assignment_type: str = "EXAM"
     due_date: datetime
     total_students: int
     submitted_count: int

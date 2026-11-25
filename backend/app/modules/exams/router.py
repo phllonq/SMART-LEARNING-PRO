@@ -1,20 +1,29 @@
 import json
 import math
 from datetime import datetime, timezone
+from pathlib import Path as FilePath
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, Query, Path, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Path, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, get_optional_current_user, require_roles
 from app.modules.auth.models import User, UserRole
+from app.modules.classrooms.models import AssignmentStatus
+from app.modules.classrooms.schemas import AssignmentCreate
+from app.modules.classrooms.service import create_assignment
 from app.modules.curriculum.schemas import PaginatedResponse
 from app.modules.exams.models import ExamStatus, AttemptStatus
 from app.modules.exams.schemas import (
     ExamCreate, ExamUpdate, ExamSummaryResponse, ExamDetailResponse,
     ExamQuestionAssign, ExamStartResponse, AutosaveAnswerRequest,
-    AutosaveAnswerResponse, ExamSubmitResponse, SubmissionSummaryResponse
+    AutosaveAnswerResponse, ExamSubmitResponse, SubmissionSummaryResponse,
+    ExamImportResponse, DraftQuizQuestion, ExamConvertPreviewResponse,
+    ExamConvertConfirmRequest, ExamConvertConfirmResponse,
 )
+from app.modules.questions.importer import convert_exam_file_to_draft, parse_questions_file
+from app.modules.questions.schemas import ImportedQuestionError, QuestionCreate
+from app.modules.questions.service import import_questions_bulk
 from app.modules.exams.service import (
     create_exam, get_exams, get_exam_by_id, update_exam,
     add_question_to_exam, remove_question_from_exam, publish_exam, archive_exam,
@@ -204,6 +213,213 @@ async def create_new_exam(
         end_time=exam.end_time,
         question_count=len(exam.exam_questions),
         created_at=exam.created_at
+    )
+
+
+@router.post("/import", response_model=ExamImportResponse, status_code=status.HTTP_201_CREATED)
+async def import_exam_from_file(
+    file: UploadFile = File(..., description="Tệp đề thi (.xlsx, .csv, .json, .docx, .txt, .pdf, ảnh)"),
+    title: str = Form(..., min_length=3, max_length=255),
+    description: Optional[str] = Form(None),
+    subject_id: Optional[str] = Form(None),
+    grade_id: Optional[int] = Form(None),
+    duration_minutes: int = Form(45, ge=5, le=300),
+    total_points: float = Form(10.0, ge=1.0, le=100.0),
+    passing_points: float = Form(5.0, ge=0.0, le=100.0),
+    publish_now: bool = Form(True),
+    publish_immediately: Optional[bool] = Form(None),
+    current_user: User = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN, UserRole.SUPERADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a complete online Exam directly from an uploaded file (.xlsx, .csv, .json, .docx, .txt, .pdf, or image when AI is configured).
+    Parses and persists questions, creates the exam, and attaches all imported questions.
+    """
+    raw_bytes = await file.read()
+    effective_publish = publish_immediately if publish_immediately is not None else publish_now
+    draft_res = await convert_exam_file_to_draft(
+        filename=file.filename,
+        content=raw_bytes,
+        is_public=True,
+        use_ai=True,
+    )
+
+    valid_questions: List[QuestionCreate] = []
+    extra_errors: List[ImportedQuestionError] = [
+        ImportedQuestionError(index=e.index, raw_preview=e.raw_preview, error=e.error)
+        for e in draft_res.errors
+    ]
+    for idx, d in enumerate(draft_res.draft_questions, start=1):
+        try:
+            valid_questions.append(QuestionCreate.model_validate({**d, "is_public": True}))
+        except Exception as exc:
+            extra_errors.append(
+                ImportedQuestionError(
+                    index=idx,
+                    raw_preview=str(d.get("content", ""))[:120],
+                    error=str(exc),
+                )
+            )
+
+    if not valid_questions:
+        err_preview = extra_errors[0].error if extra_errors else "Không có câu hỏi hợp lệ có đáp án đúng trong tệp."
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Không thể tạo đề thi trực tiếp: {err_preview}",
+        )
+
+    created_questions = await import_questions_bulk(db, valid_questions, creator=current_user)
+    exam_data = ExamCreate(
+        title=title.strip(),
+        description=description.strip() if description else None,
+        subject_id=subject_id or None,
+        grade_id=grade_id,
+        duration_minutes=duration_minutes,
+        total_points=total_points,
+        passing_points=passing_points,
+        status=ExamStatus.PUBLISHED if effective_publish else ExamStatus.DRAFT,
+        question_ids=[q.id for q in created_questions],
+    )
+    exam = await create_exam(db, exam_data, creator=current_user)
+
+    summary = ExamSummaryResponse(
+        id=exam.id,
+        title=exam.title,
+        description=exam.description,
+        subject_id=exam.subject_id,
+        grade_id=exam.grade_id,
+        creator_id=exam.creator_id,
+        duration_minutes=exam.duration_minutes,
+        total_points=exam.total_points,
+        passing_points=exam.passing_points,
+        max_attempts=exam.max_attempts,
+        status=exam.status,
+        is_published=exam.is_published,
+        start_time=exam.start_time,
+        end_time=exam.end_time,
+        question_count=len(exam.exam_questions),
+        created_at=exam.created_at,
+    )
+    return ExamImportResponse(
+        exam=summary,
+        imported_questions_count=len(created_questions),
+        failed_count=len(extra_errors),
+        errors=extra_errors,
+    )
+
+
+@router.post("/convert-preview", response_model=ExamConvertPreviewResponse)
+async def preview_convert_exam_file(
+    file: UploadFile = File(..., description="Tệp đề thi cần chuyển thành trắc nghiệm (.docx, .txt, .pdf, ảnh, .xlsx, .csv, .json)"),
+    use_ai: bool = Form(True),
+    current_user: User = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN, UserRole.SUPERADMIN)),
+):
+    """
+    Parse an uploaded teacher exam file into editable draft multiple-choice questions
+    (supports missing answer keys so teacher can review and click A/B/C/D before saving).
+    """
+    raw_bytes = await file.read()
+    draft_res = await convert_exam_file_to_draft(
+        filename=file.filename,
+        content=raw_bytes,
+        is_public=True,
+        use_ai=use_ai,
+    )
+    stem = FilePath(file.filename or "Đề trắc nghiệm").stem
+    suggested = stem.replace("_", " ").replace("-", " ").strip() or "Đề trắc nghiệm mới"
+
+    draft_models = [DraftQuizQuestion.model_validate(d) for d in draft_res.draft_questions]
+    ready_count = sum(1 for q in draft_models if q.has_correct_answer)
+    needs_answer_count = len(draft_models) - ready_count
+
+    return ExamConvertPreviewResponse(
+        suggested_title=suggested,
+        total_detected=draft_res.total_detected,
+        ready_count=ready_count,
+        needs_answer_count=needs_answer_count,
+        extraction_method=draft_res.extraction_method,
+        ai_used=draft_res.ai_used,
+        ai_available=draft_res.ai_available,
+        draft_questions=draft_models,
+        errors=[
+            ImportedQuestionError(index=e.index, raw_preview=e.raw_preview, error=e.error)
+            for e in draft_res.errors
+        ],
+    )
+
+
+@router.post("/convert-confirm", response_model=ExamConvertConfirmResponse, status_code=status.HTTP_201_CREATED)
+async def confirm_convert_exam_to_quiz(
+    payload: ExamConvertConfirmRequest,
+    current_user: User = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN, UserRole.SUPERADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Persist reviewed quiz questions into Question Bank + create an online Exam,
+    and optionally publish an Assignment to a classroom in the same transaction.
+    """
+    if payload.classroom_id and not payload.due_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cần chọn hạn chót nộp bài (due_date) khi giao trực tiếp cho lớp học.",
+        )
+
+    created_questions = await import_questions_bulk(db, payload.questions, creator=current_user)
+    should_publish_exam = payload.publish_now or bool(payload.classroom_id)
+
+    exam_data = ExamCreate(
+        title=payload.title.strip(),
+        description=payload.description.strip() if payload.description else None,
+        subject_id=payload.subject_id or None,
+        grade_id=payload.grade_id,
+        duration_minutes=payload.duration_minutes,
+        total_points=payload.total_points,
+        passing_points=payload.passing_points,
+        status=ExamStatus.PUBLISHED if should_publish_exam else ExamStatus.DRAFT,
+        question_ids=[q.id for q in created_questions],
+    )
+    exam = await create_exam(db, exam_data, creator=current_user)
+
+    assignment_id: Optional[str] = None
+    if payload.classroom_id:
+        assignment = await create_assignment(
+            db=db,
+            classroom_id=payload.classroom_id,
+            data=AssignmentCreate(
+                exam_id=exam.id,
+                title=(payload.assignment_title or payload.title).strip(),
+                description=payload.description.strip() if payload.description else None,
+                due_date=payload.due_date,
+                allow_late_submission=payload.allow_late_submission,
+                status=AssignmentStatus.PUBLISHED,
+            ),
+            user=current_user,
+        )
+        assignment_id = assignment.id
+
+    summary = ExamSummaryResponse(
+        id=exam.id,
+        title=exam.title,
+        description=exam.description,
+        subject_id=exam.subject_id,
+        grade_id=exam.grade_id,
+        creator_id=exam.creator_id,
+        duration_minutes=exam.duration_minutes,
+        total_points=exam.total_points,
+        passing_points=exam.passing_points,
+        max_attempts=exam.max_attempts,
+        status=exam.status,
+        is_published=exam.is_published,
+        start_time=exam.start_time,
+        end_time=exam.end_time,
+        question_count=len(exam.exam_questions),
+        created_at=exam.created_at,
+    )
+    return ExamConvertConfirmResponse(
+        exam=summary,
+        imported_questions_count=len(created_questions),
+        assignment_id=assignment_id,
+        classroom_id=payload.classroom_id,
     )
 
 

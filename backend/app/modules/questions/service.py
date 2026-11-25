@@ -251,3 +251,19 @@ async def toggle_question_publish(
     question.is_public = not question.is_public
     await db.flush()
     return await get_question_by_id(db, question.id, user=user)
+
+
+async def import_questions_bulk(
+    db: AsyncSession,
+    questions_in: List[QuestionCreate],
+    creator: User,
+) -> List[Question]:
+    """Persist a validated list of imported questions with their options."""
+    if creator.role not in [UserRole.TEACHER.value, UserRole.ADMIN.value, UserRole.SUPERADMIN.value]:
+        raise PermissionDeniedException("Chỉ giáo viên hoặc quản trị viên mới có quyền import câu hỏi.")
+
+    created_questions: List[Question] = []
+    for q_in in questions_in:
+        q = await create_question(db, q_in, creator=creator)
+        created_questions.append(q)
+    return created_questions

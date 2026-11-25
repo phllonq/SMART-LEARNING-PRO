@@ -1,6 +1,7 @@
 import math
 from typing import Optional, List, Union
-from fastapi import APIRouter, Depends, Query, Path, status
+from fastapi import APIRouter, Depends, File, Form, Query, Path, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -11,13 +12,16 @@ from app.modules.questions.models import QuestionType, DifficultyLevel
 from app.modules.questions.schemas import (
     QuestionCreate, QuestionUpdate,
     QuestionAdminResponse, QuestionStudentResponse,
-    QuestionOptionAdminResponse, QuestionOptionStudentResponse
+    QuestionOptionAdminResponse, QuestionOptionStudentResponse,
+    ImportedQuestionError, QuestionImportResponse,
 )
 from app.modules.questions.service import (
     get_questions, get_question_by_id,
     create_question, update_question,
-    delete_question, toggle_question_publish
+    delete_question, toggle_question_publish,
+    import_questions_bulk,
 )
+from app.modules.questions.importer import parse_questions_file
 
 router = APIRouter(prefix="/questions", tags=["Question Bank"])
 
@@ -182,3 +186,72 @@ async def toggle_publish(
     """Toggle between published (public) and draft states."""
     question = await toggle_question_publish(db, question_id, user=current_user)
     return format_question_response(question, privileged=True)
+
+
+@router.get("/import-template/csv")
+async def download_question_import_template(
+    current_user: User = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN, UserRole.SUPERADMIN)),
+):
+    """Download a UTF-8 BOM CSV template for bulk question import."""
+    csv_template = (
+        "\ufeff"
+        "content,question_type,difficulty_level,option_a,option_b,option_c,option_d,correct,explanation,hint,tags\n"
+        "\"Giải phương trình $x^2 - 4 = 0$.\",SINGLE_CHOICE,RECOGNITION,\"x = 2\",\"x = -2\",\"x = 2 hoặc x = -2\",\"Vô nghiệm\",C,\"Ta có $x^2 = 4 \\Rightarrow x = \\pm 2$.\",\"Chuyển vế và lấy căn bậc hai\",\"toan,dai so\"\n"
+        "\"Đạo hàm của $f(x) = x^3$ là:\",SINGLE_CHOICE,COMPREHENSION,\"$3x^2$\",\"$x^2$\",\"$3x$\",\"$x^3$\",A,\"Áp dụng công thức $(x^n)' = n x^{n-1}$.\",\"Dùng quy tắc lũy thừa\",\"giai tich,dao ham\"\n"
+    )
+    return Response(
+        content=csv_template.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="smart_learning_question_template.csv"'},
+    )
+
+
+@router.post("/import", response_model=QuestionImportResponse, status_code=status.HTTP_200_OK)
+async def import_questions_from_file(
+    file: UploadFile = File(..., description="Tệp câu hỏi (.xlsx, .csv, .json, .docx)"),
+    topic_id: Optional[str] = Form(None),
+    lesson_id: Optional[str] = Form(None),
+    is_public: bool = Form(True),
+    dry_run: bool = Form(False),
+    current_user: User = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN, UserRole.SUPERADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Parse and import questions from teacher's local .xlsx, .csv, .json, or .docx file.
+    Supports `dry_run=true` to preview and validate before persisting.
+    """
+    raw_bytes = await file.read()
+    parsed = parse_questions_file(
+        filename=file.filename,
+        content=raw_bytes,
+        topic_id=topic_id or None,
+        lesson_id=lesson_id or None,
+        is_public=is_public,
+    )
+
+    err_items = [
+        ImportedQuestionError(index=e.index, raw_preview=e.raw_preview, error=e.error)
+        for e in parsed.errors
+    ]
+
+    if dry_run:
+        return QuestionImportResponse(
+            dry_run=True,
+            total_detected=parsed.total_detected,
+            imported_count=0,
+            failed_count=len(err_items),
+            errors=err_items,
+            questions=[],
+            preview_questions=parsed.valid_questions,
+        )
+
+    created = await import_questions_bulk(db, parsed.valid_questions, creator=current_user)
+    return QuestionImportResponse(
+        dry_run=False,
+        total_detected=parsed.total_detected,
+        imported_count=len(created),
+        failed_count=len(err_items),
+        errors=err_items,
+        questions=[format_question_response(q, privileged=True) for q in created],
+        preview_questions=[],
+    )

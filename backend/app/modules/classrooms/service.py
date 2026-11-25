@@ -2,7 +2,9 @@ import json
 import secrets
 import string
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
+from fastapi import UploadFile
 from sqlalchemy import select, and_, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -13,13 +15,17 @@ from app.core.exceptions import (
     PermissionDeniedException,
     DuplicateEntityException
 )
+from app.core.storage import resolve_storage_path, save_upload_file
 from app.modules.auth.models import User, UserRole
 from app.modules.classrooms.models import (
     Classroom,
     ClassroomMember,
     Assignment,
+    AssignmentFileSubmission,
     ClassroomStatus,
-    AssignmentStatus
+    AssignmentStatus,
+    AssignmentType,
+    FileSubmissionStatus,
 )
 from app.modules.classrooms.schemas import (
     ClassroomCreate,
@@ -28,7 +34,9 @@ from app.modules.classrooms.schemas import (
     AssignmentCreate,
     AssignmentUpdate,
     AssignmentSubmissionsResponse,
-    AssignmentSubmissionItem
+    AssignmentSubmissionItem,
+    FileSubmissionResponse,
+    FileSubmissionGradeRequest,
 )
 from app.modules.exams.models import (
     Exam,
@@ -345,8 +353,15 @@ async def get_classroom_statistics(
     att_res = await db.execute(attempts_query)
     attempts = list(att_res.scalars().all())
 
-    total_submissions = len(attempts)
-    scores = [att.score for att in attempts if att.score is not None]
+    file_subs_query = select(AssignmentFileSubmission).where(
+        AssignmentFileSubmission.assignment_id.in_(assignment_ids)
+    )
+    file_subs = list((await db.execute(file_subs_query)).scalars().all())
+
+    total_submissions = len(attempts) + len(file_subs)
+    scores = [att.score for att in attempts if att.score is not None] + [
+        fs.score for fs in file_subs if fs.score is not None
+    ]
     avg_score = round(sum(scores) / len(scores), 2) if scores else 0.0
 
     possible_submissions = total_students * total_assignments
@@ -394,7 +409,9 @@ async def create_assignment(
     is_pub = (data.status == AssignmentStatus.PUBLISHED)
     assignment = Assignment(
         classroom_id=classroom.id,
+        assignment_type=AssignmentType.EXAM.value,
         exam_id=data.exam_id,
+        total_points=exam.total_points,
         title=data.title.strip(),
         description=data.description,
         open_date=data.open_date,
@@ -404,6 +421,55 @@ async def create_assignment(
         allow_review=data.allow_review,
         status=data.status.value,
         is_published=is_pub
+    )
+    db.add(assignment)
+    await db.flush()
+    return await get_assignment_by_id(db, assignment.id, user=user)
+
+
+async def create_file_assignment(
+    db: AsyncSession,
+    classroom_id: str,
+    title: str,
+    due_date: datetime,
+    upload_file: UploadFile,
+    user: User,
+    description: Optional[str] = None,
+    open_date: Optional[datetime] = None,
+    allow_late_submission: bool = False,
+    total_points: float = 10.0,
+    status: AssignmentStatus = AssignmentStatus.PUBLISHED,
+) -> Assignment:
+    """Create a file-based homework assignment by uploading a file from teacher's computer."""
+    classroom = await get_classroom_by_id(db, classroom_id, user=user)
+    check_classroom_teacher_access(classroom, user)
+
+    if open_date and due_date:
+        if ensure_utc(due_date) <= ensure_utc(open_date):
+            raise PermissionDeniedException("Hạn nộp bài phải sau thời điểm mở bài tập.")
+
+    storage_key, safe_name, _, _ = await save_upload_file(
+        upload=upload_file,
+        subdir=f"assignments/{classroom.id}",
+    )
+
+    is_pub = (status == AssignmentStatus.PUBLISHED)
+    assignment = Assignment(
+        classroom_id=classroom.id,
+        assignment_type=AssignmentType.FILE.value,
+        exam_id=None,
+        attachment_url=storage_key,
+        attachment_name=safe_name,
+        total_points=total_points,
+        title=title.strip(),
+        description=description.strip() if description else None,
+        open_date=open_date,
+        due_date=due_date,
+        max_attempts=1,
+        allow_late_submission=allow_late_submission,
+        allow_review=True,
+        status=status.value,
+        is_published=is_pub,
     )
     db.add(assignment)
     await db.flush()
@@ -422,7 +488,9 @@ async def get_assignment_by_id(
         .where(Assignment.id == assignment_id)
         .options(
             selectinload(Assignment.classroom).selectinload(Classroom.members),
-            selectinload(Assignment.exam).selectinload(Exam.exam_questions)
+            selectinload(Assignment.exam).selectinload(Exam.exam_questions),
+            selectinload(Assignment.attempts),
+            selectinload(Assignment.file_submissions),
         )
         .execution_options(populate_existing=True)
     )
@@ -462,7 +530,9 @@ async def list_classroom_assignments(
         .where(Assignment.classroom_id == classroom_id)
         .options(
             selectinload(Assignment.exam).selectinload(Exam.exam_questions),
-            selectinload(Assignment.classroom)
+            selectinload(Assignment.classroom),
+            selectinload(Assignment.attempts),
+            selectinload(Assignment.file_submissions),
         )
         .order_by(Assignment.due_date.asc())
     )
@@ -545,6 +615,87 @@ async def get_assignment_submissions(
     members_res = await db.execute(members_q)
     members = list(members_res.scalars().all())
 
+    # Handle FILE-based assignment submissions separately
+    if assignment.assignment_type == AssignmentType.FILE.value:
+        subs_q = select(AssignmentFileSubmission).where(
+            AssignmentFileSubmission.assignment_id == assignment_id
+        )
+        subs = list((await db.execute(subs_q)).scalars().all())
+        sub_map = {s.student_id: s for s in subs}
+
+        items = []
+        submitted_count = 0
+        not_started_count = 0
+        scores = []
+        max_pts = assignment.total_points or 10.0
+
+        for m in members:
+            stu = m.student
+            fs = sub_map.get(stu.id)
+            if not fs:
+                not_started_count += 1
+                items.append(
+                    AssignmentSubmissionItem(
+                        student_id=stu.id,
+                        student_name=stu.full_name,
+                        student_email=stu.email,
+                        status="NOT_STARTED",
+                        maximum_score=max_pts,
+                    )
+                )
+            else:
+                submitted_count += 1
+                if fs.score is not None:
+                    scores.append(fs.score)
+                is_pass = fs.score is not None and fs.score >= (max_pts * 0.5)
+                items.append(
+                    AssignmentSubmissionItem(
+                        student_id=stu.id,
+                        student_name=stu.full_name,
+                        student_email=stu.email,
+                        status=fs.status,
+                        file_submission_id=fs.id,
+                        submitted_file_name=fs.file_name,
+                        submitted_file_size=fs.file_size,
+                        student_note=fs.student_note,
+                        teacher_feedback=fs.teacher_feedback,
+                        download_url=f"/api/v1/assignments/{assignment.id}/file-submissions/{fs.id}/download",
+                        score=fs.score,
+                        maximum_score=max_pts,
+                        is_passed=is_pass,
+                        submitted_at=fs.submitted_at,
+                        file_submission=FileSubmissionResponse(
+                            id=fs.id,
+                            assignment_id=fs.assignment_id,
+                            student_id=fs.student_id,
+                            file_name=fs.file_name,
+                            file_size=fs.file_size,
+                            content_type=fs.content_type,
+                            student_note=fs.student_note,
+                            status=fs.status,
+                            score=fs.score,
+                            teacher_feedback=fs.teacher_feedback,
+                            submitted_at=fs.submitted_at,
+                            graded_at=fs.graded_at,
+                            download_url=f"/api/v1/assignments/{assignment.id}/file-submissions/{fs.id}/download",
+                        ),
+                    )
+                )
+
+        avg_score = round(sum(scores) / len(scores), 2) if scores else 0.0
+        return AssignmentSubmissionsResponse(
+            assignment_id=assignment.id,
+            assignment_title=assignment.title,
+            assignment_type=assignment.assignment_type,
+            due_date=assignment.due_date,
+            total_students=len(members),
+            submitted_count=submitted_count,
+            in_progress_count=0,
+            not_started_count=not_started_count,
+            average_score=avg_score,
+            items=items,
+        )
+
     # All attempts for this assignment
     attempts_q = (
         select(ExamAttempt)
@@ -580,7 +731,7 @@ async def get_assignment_submissions(
                 attempt_id=None,
                 attempt_number=0,
                 score=None,
-                maximum_score=assignment.exam.total_points,
+                maximum_score=assignment.exam.total_points if assignment.exam else assignment.total_points,
                 is_passed=False,
                 started_at=None,
                 submitted_at=None,
@@ -606,7 +757,8 @@ async def get_assignment_submissions(
             submitted_count += 1
             score_val = att.score if att.score is not None else (att.result.total_score if att.result else 0.0)
             scores.append(score_val)
-            is_pass = score_val >= assignment.exam.passing_points
+            passing = assignment.exam.passing_points if assignment.exam else (assignment.total_points * 0.5)
+            is_pass = score_val >= passing
             items.append(AssignmentSubmissionItem(
                 student_id=stu.id,
                 student_name=stu.full_name,
@@ -627,6 +779,7 @@ async def get_assignment_submissions(
     return AssignmentSubmissionsResponse(
         assignment_id=assignment.id,
         assignment_title=assignment.title,
+        assignment_type=assignment.assignment_type,
         due_date=assignment.due_date,
         total_students=len(members),
         submitted_count=submitted_count,
@@ -638,7 +791,7 @@ async def get_assignment_submissions(
 
 
 # ==============================================================================
-# 4. STUDENT ASSIGNMENT WORKFLOW (START, MY-ATTEMPT, SUBMIT)
+# 4. STUDENT ASSIGNMENT WORKFLOW (START, MY-ATTEMPT, SUBMIT, FILE SUBMISSION)
 # ==============================================================================
 
 async def start_assignment(
@@ -653,6 +806,8 @@ async def start_assignment(
     - Reuses Examination Engine snapshot and attempt tracking.
     """
     assignment = await get_assignment_by_id(db, assignment_id, user=student)
+    if assignment.assignment_type == AssignmentType.FILE.value or not assignment.exam_id:
+        raise PermissionDeniedException("Bài tập này là dạng nộp tệp đính kèm, không phải bài thi trắc nghiệm trực tuyến.")
     now = datetime.now(timezone.utc)
 
     # 1. Check membership
@@ -690,6 +845,8 @@ async def get_my_assignment_attempt(
 ) -> Dict[str, Any]:
     """Get active or submitted attempt details for current student."""
     assignment = await get_assignment_by_id(db, assignment_id, user=student)
+    if assignment.assignment_type == AssignmentType.FILE.value or not assignment.exam_id:
+        raise PermissionDeniedException(detail="Bài tập dạng tệp đính kèm không sử dụng bài thi trực tuyến.")
 
     q = (
         select(ExamAttempt)
@@ -747,6 +904,8 @@ async def submit_assignment(
 ) -> ExamSubmitResponse:
     """Submit student's active assignment attempt with auto-grading."""
     assignment = await get_assignment_by_id(db, assignment_id, user=student, allow_cancelled=True)
+    if assignment.assignment_type == AssignmentType.FILE.value or not assignment.exam_id:
+        raise PermissionDeniedException(detail="Bài tập dạng tệp đính kèm cần nộp file qua endpoint /file-submission.")
 
     # Find the active or most recent in-progress attempt
     q = (
@@ -780,3 +939,154 @@ async def submit_assignment(
         result.question_reviews = None
 
     return result
+
+
+async def get_assignment_attachment_path(
+    db: AsyncSession,
+    assignment_id: str,
+    user: User,
+) -> Tuple[Path, str]:
+    """Authorize user and resolve attachment file path on disk."""
+    assignment = await get_assignment_by_id(db, assignment_id, user=user)
+    if not assignment.attachment_url:
+        raise EntityNotFoundException("AssignmentAttachment", assignment_id)
+    file_path = resolve_storage_path(assignment.attachment_url)
+    return file_path, (assignment.attachment_name or file_path.name)
+
+
+async def submit_file_assignment(
+    db: AsyncSession,
+    assignment_id: str,
+    upload_file: UploadFile,
+    student: User,
+    student_note: Optional[str] = None,
+) -> AssignmentFileSubmission:
+    """Student uploads a file submission for a FILE-type assignment."""
+    if student.role != UserRole.STUDENT.value:
+        raise PermissionDeniedException("Chỉ học sinh mới có quyền nộp bài tập.")
+
+    assignment = await get_assignment_by_id(db, assignment_id, user=student)
+    if assignment.assignment_type != AssignmentType.FILE.value:
+        raise PermissionDeniedException("Bài tập này yêu cầu làm bài trắc nghiệm trực tuyến, không phải nộp tệp.")
+
+    is_member = await verify_classroom_membership(db, assignment.classroom_id, student.id)
+    if not is_member:
+        raise PermissionDeniedException("Bạn không phải thành viên của lớp học này để nộp bài.")
+
+    now = datetime.now(timezone.utc)
+    if assignment.open_date:
+        open_utc = ensure_utc(assignment.open_date)
+        if open_utc and open_utc > now:
+            raise PermissionDeniedException(f"Bài tập chưa mở (Thời điểm mở: {assignment.open_date}).")
+
+    due_utc = ensure_utc(assignment.due_date)
+    if due_utc and now > due_utc and not assignment.allow_late_submission:
+        raise PermissionDeniedException("Hạn chót nộp bài tập đã qua. Hệ thống không cho phép nộp muộn.")
+
+    storage_key, safe_name, file_size, content_type = await save_upload_file(
+        upload=upload_file,
+        subdir=f"submissions/{assignment.id}/{student.id}",
+    )
+
+    existing_q = select(AssignmentFileSubmission).where(
+        AssignmentFileSubmission.assignment_id == assignment.id,
+        AssignmentFileSubmission.student_id == student.id,
+    )
+    existing = (await db.execute(existing_q)).scalar_one_or_none()
+
+    if existing:
+        if existing.status == FileSubmissionStatus.GRADED.value:
+            raise PermissionDeniedException("Bài nộp của bạn đã được giáo viên chấm điểm và khóa lại.")
+        # Clean up old file safely if exists
+        try:
+            old_path = resolve_storage_path(existing.file_url)
+            old_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        existing.file_url = storage_key
+        existing.file_name = safe_name
+        existing.file_size = file_size
+        existing.content_type = content_type
+        existing.student_note = student_note.strip() if student_note else None
+        existing.submitted_at = now
+        existing.status = FileSubmissionStatus.SUBMITTED.value
+        await db.flush()
+        await db.refresh(existing)
+        return existing
+
+    submission = AssignmentFileSubmission(
+        assignment_id=assignment.id,
+        student_id=student.id,
+        file_url=storage_key,
+        file_name=safe_name,
+        file_size=file_size,
+        content_type=content_type,
+        student_note=student_note.strip() if student_note else None,
+        status=FileSubmissionStatus.SUBMITTED.value,
+        submitted_at=now,
+    )
+    db.add(submission)
+    await db.flush()
+    await db.refresh(submission)
+    return submission
+
+
+async def get_file_submission_download_path(
+    db: AsyncSession,
+    assignment_id: str,
+    submission_id: str,
+    user: User,
+) -> Tuple[Path, str]:
+    """Authorize teacher owner/admin or submitting student to download a file submission."""
+    assignment = await get_assignment_by_id(db, assignment_id, user=user, allow_cancelled=True)
+
+    sub_q = select(AssignmentFileSubmission).where(
+        AssignmentFileSubmission.id == submission_id,
+        AssignmentFileSubmission.assignment_id == assignment.id,
+    )
+    submission = (await db.execute(sub_q)).scalar_one_or_none()
+    if not submission:
+        raise EntityNotFoundException("AssignmentFileSubmission", submission_id)
+
+    is_admin = user.role in [UserRole.ADMIN.value, UserRole.SUPERADMIN.value]
+    is_teacher_owner = (assignment.classroom.teacher_id == user.id)
+    is_submitting_student = (submission.student_id == user.id)
+
+    if not (is_admin or is_teacher_owner or is_submitting_student):
+        raise PermissionDeniedException("Bạn không có quyền tải tệp bài nộp này.")
+
+    file_path = resolve_storage_path(submission.file_url)
+    return file_path, (submission.file_name or file_path.name)
+
+
+async def grade_file_submission(
+    db: AsyncSession,
+    assignment_id: str,
+    submission_id: str,
+    data: FileSubmissionGradeRequest,
+    user: User,
+) -> AssignmentFileSubmission:
+    """Teacher or Admin grades a student's file submission."""
+    assignment = await get_assignment_by_id(db, assignment_id, user=user, allow_cancelled=True)
+    check_classroom_teacher_access(assignment.classroom, user)
+
+    sub_q = select(AssignmentFileSubmission).where(
+        AssignmentFileSubmission.id == submission_id,
+        AssignmentFileSubmission.assignment_id == assignment.id,
+    )
+    submission = (await db.execute(sub_q)).scalar_one_or_none()
+    if not submission:
+        raise EntityNotFoundException("AssignmentFileSubmission", submission_id)
+
+    max_pts = assignment.total_points or 10.0
+    if data.score > max_pts:
+        raise PermissionDeniedException(f"Điểm chấm ({data.score}) không được vượt quá thang điểm tối đa ({max_pts}).")
+
+    submission.score = data.score
+    submission.teacher_feedback = data.teacher_feedback.strip() if data.teacher_feedback else None
+    submission.status = FileSubmissionStatus.GRADED.value
+    submission.graded_at = datetime.now(timezone.utc)
+
+    await db.flush()
+    await db.refresh(submission)
+    return submission

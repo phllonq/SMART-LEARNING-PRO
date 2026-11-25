@@ -1,6 +1,10 @@
 import { apiClient } from "./client";
 import {
   ExamDetail,
+  ExamImportResponse,
+  ExamConvertPreviewResponse,
+  ExamConvertConfirmRequest,
+  ExamConvertConfirmResponse,
   ExamSummary,
   PaginatedResponse,
   ExamStartResponse,
@@ -40,6 +44,52 @@ export const examsApi = {
     question_ids?: string[];
   }): Promise<ExamSummary> {
     return apiClient.post<ExamSummary>("/exams", data);
+  },
+
+  async importExamFromFile(params: {
+    file: File;
+    title: string;
+    description?: string;
+    grade_id?: number;
+    subject_id?: string;
+    duration_minutes?: number;
+    total_points?: number;
+    passing_points?: number;
+    publish_immediately?: boolean;
+  }): Promise<ExamImportResponse> {
+    const formData = new FormData();
+    formData.append("file", params.file);
+    formData.append("title", params.title);
+    if (params.description) formData.append("description", params.description);
+    if (params.grade_id !== undefined) formData.append("grade_id", String(params.grade_id));
+    if (params.subject_id) formData.append("subject_id", params.subject_id);
+    formData.append("duration_minutes", String(params.duration_minutes ?? 45));
+    formData.append("total_points", String(params.total_points ?? 10));
+    formData.append("passing_points", String(params.passing_points ?? 5));
+    formData.append("publish_immediately", String(params.publish_immediately ?? false));
+    return apiClient.postForm<ExamImportResponse>("/exams/import", formData);
+  },
+
+  async previewConvertExamFile(
+    file: File,
+    useAi: boolean = true
+  ): Promise<ExamConvertPreviewResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("use_ai", String(useAi));
+    return apiClient.postForm<ExamConvertPreviewResponse>(
+      "/exams/convert-preview",
+      formData
+    );
+  },
+
+  async confirmConvertExamToQuiz(
+    data: ExamConvertConfirmRequest
+  ): Promise<ExamConvertConfirmResponse> {
+    return apiClient.post<ExamConvertConfirmResponse>(
+      "/exams/convert-confirm",
+      data
+    );
   },
 
   async publishExam(id: string): Promise<ExamSummary> {

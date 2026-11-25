@@ -122,6 +122,22 @@ class QuestionAdminResponse(QuestionBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ImportedQuestionError(BaseModel):
+    index: int
+    raw_preview: str
+    error: str
+
+
+class QuestionImportResponse(BaseModel):
+    dry_run: bool = False
+    total_detected: int
+    imported_count: int
+    failed_count: int
+    errors: List[ImportedQuestionError] = []
+    questions: List[QuestionAdminResponse] = []
+    preview_questions: List[QuestionCreate] = []
+
+
 class QuestionStudentResponse(BaseModel):
     id: str
     topic_id: Optional[str] = None
@@ -134,3 +150,19 @@ class QuestionStudentResponse(BaseModel):
     options: List[QuestionOptionStudentResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ImportedQuestionError(BaseModel):
+    index: int
+    raw_preview: str
+    error: str
+
+
+class QuestionImportResponse(BaseModel):
+    dry_run: bool = False
+    total_detected: int
+    imported_count: int
+    failed_count: int
+    errors: List[ImportedQuestionError] = []
+    questions: List[QuestionAdminResponse] = []
+    preview_questions: List[QuestionCreate] = []

@@ -10,6 +10,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ExamFileConverterModal } from "@/components/teacher/exam-file-converter";
 import {
   Trophy,
   PlusCircle,
@@ -17,6 +18,7 @@ import {
   Award,
   HelpCircle,
   CheckCircle2,
+  Sparkles,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
@@ -30,6 +32,9 @@ export default function TeacherExamsPage() {
   const [description, setDescription] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  // Convert uploaded file to multiple-choice exam modal
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   const {
     data: examsData,
@@ -91,13 +96,23 @@ export default function TeacherExamsPage() {
             Kho đề thi và bài kiểm tra định kỳ chuẩn ma trận năng lực
           </p>
         </div>
-        <Button
-          onClick={() => setIsCreateOpen(true)}
-          className="gap-2 bg-emerald-600 hover:bg-emerald-700"
-        >
-          <PlusCircle className="h-4 w-4" />
-          <span>Tạo đề thi mới</span>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setIsImportOpen(true)}
+            className="gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+          >
+            <Sparkles className="h-4 w-4" />
+            <span>Up đề -&gt; Chuyển thành Trắc nghiệm</span>
+          </Button>
+          <Button
+            onClick={() => setIsCreateOpen(true)}
+            className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+          >
+            <PlusCircle className="h-4 w-4" />
+            <span>Tạo đề thi mới</span>
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -282,6 +297,13 @@ export default function TeacherExamsPage() {
           </div>
         </form>
       </Dialog>
+
+      {/* Convert Exam File To Interactive Multiple-Choice Quiz */}
+      <ExamFileConverterModal
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
+        onSuccess={() => refetch()}
+      />
     </div>
   );
 }

@@ -1,10 +1,13 @@
+from datetime import datetime
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
 from app.modules.auth.models import User, UserRole
+from app.modules.classrooms.models import Assignment, AssignmentStatus, AssignmentType
 from app.modules.classrooms.schemas import (
     ClassroomCreate,
     ClassroomUpdate,
@@ -16,7 +19,9 @@ from app.modules.classrooms.schemas import (
     AssignmentCreate,
     AssignmentUpdate,
     AssignmentSummaryResponse,
-    AssignmentSubmissionsResponse
+    AssignmentSubmissionsResponse,
+    FileSubmissionResponse,
+    FileSubmissionGradeRequest,
 )
 from app.modules.classrooms.service import (
     create_classroom,
@@ -30,7 +35,9 @@ from app.modules.classrooms.service import (
     leave_classroom,
     get_classroom_statistics,
     create_assignment,
+    create_file_assignment,
     get_assignment_by_id,
+    get_assignment_attachment_path,
     list_classroom_assignments,
     update_assignment,
     publish_assignment,
@@ -38,9 +45,88 @@ from app.modules.classrooms.service import (
     get_assignment_submissions,
     start_assignment,
     get_my_assignment_attempt,
-    submit_assignment
+    submit_assignment,
+    submit_file_assignment,
+    get_file_submission_download_path,
+    grade_file_submission,
 )
 from app.modules.exams.schemas import ExamStartResponse, ExamSubmitResponse
+
+
+def _serialize_assignment_summary(a: Assignment, current_user: User) -> AssignmentSummaryResponse:
+    """Serialize Assignment ORM into AssignmentSummaryResponse for both EXAM and FILE types."""
+    is_file = (a.assignment_type == AssignmentType.FILE.value)
+    has_att = bool(a.attachment_url)
+    att_url = f"/api/v1/assignments/{a.id}/attachment" if has_att else None
+
+    my_status: Optional[str] = None
+    my_score: Optional[float] = None
+    my_attempts_count = 0
+    my_file_sub: Optional[FileSubmissionResponse] = None
+
+    if current_user.role == UserRole.STUDENT.value:
+        if is_file:
+            sub = next((s for s in (a.file_submissions or []) if s.student_id == current_user.id), None)
+            if sub:
+                my_status = sub.status
+                my_score = sub.score
+                my_attempts_count = 1
+                my_file_sub = FileSubmissionResponse(
+                    id=sub.id,
+                    assignment_id=sub.assignment_id,
+                    student_id=sub.student_id,
+                    file_name=sub.file_name,
+                    file_size=sub.file_size,
+                    content_type=sub.content_type,
+                    student_note=sub.student_note,
+                    status=sub.status,
+                    score=sub.score,
+                    teacher_feedback=sub.teacher_feedback,
+                    submitted_at=sub.submitted_at,
+                    graded_at=sub.graded_at,
+                    download_url=f"/api/v1/assignments/{a.id}/file-submissions/{sub.id}/download",
+                )
+            else:
+                my_status = "NOT_STARTED"
+        else:
+            my_atts = [att for att in (a.attempts or []) if att.student_id == current_user.id]
+            my_attempts_count = len(my_atts)
+            if my_atts:
+                latest = sorted(my_atts, key=lambda x: x.started_at, reverse=True)[0]
+                my_status = latest.status
+                my_score = latest.score
+            else:
+                my_status = "NOT_STARTED"
+
+    return AssignmentSummaryResponse(
+        id=a.id,
+        classroom_id=a.classroom_id,
+        classroom_name=a.classroom.name if a.classroom else None,
+        assignment_type=a.assignment_type or AssignmentType.EXAM.value,
+        exam_id=a.exam_id,
+        exam_title=a.exam.title if a.exam else None,
+        attachment_name=a.attachment_name,
+        has_attachment=has_att,
+        attachment_download_url=att_url,
+        title=a.title,
+        description=a.description,
+        open_date=a.open_date,
+        due_date=a.due_date,
+        max_attempts=a.max_attempts,
+        allow_late_submission=a.allow_late_submission,
+        allow_review=a.allow_review,
+        status=a.status,
+        is_published=a.is_published,
+        total_points=a.exam.total_points if a.exam else (a.total_points or 10.0),
+        duration_minutes=a.exam.duration_minutes if a.exam else 45,
+        question_count=len(a.exam.exam_questions) if a.exam and a.exam.exam_questions else 0,
+        my_status=my_status,
+        my_score=my_score,
+        my_attempts_count=my_attempts_count,
+        my_file_submission=my_file_sub,
+        created_at=a.created_at,
+        updated_at=a.updated_at,
+    )
 
 
 # ==============================================================================
@@ -313,30 +399,7 @@ async def list_assignments_for_classroom(
     - Student: published assignments only.
     """
     assignments = await list_classroom_assignments(db, classroom_id, user=current_user)
-    return [
-        AssignmentSummaryResponse(
-            id=a.id,
-            classroom_id=a.classroom_id,
-            classroom_name=a.classroom.name if a.classroom else None,
-            exam_id=a.exam_id,
-            exam_title=a.exam.title if a.exam else None,
-            title=a.title,
-            description=a.description,
-            open_date=a.open_date,
-            due_date=a.due_date,
-            max_attempts=a.max_attempts,
-            allow_late_submission=a.allow_late_submission,
-            allow_review=a.allow_review,
-            status=a.status,
-            is_published=a.is_published,
-            total_points=a.exam.total_points if a.exam else 10.0,
-            duration_minutes=a.exam.duration_minutes if a.exam else 45,
-            question_count=len(a.exam.exam_questions) if a.exam and a.exam.exam_questions else 0,
-            created_at=a.created_at,
-            updated_at=a.updated_at
-        )
-        for a in assignments
-    ]
+    return [_serialize_assignment_summary(a, current_user) for a in assignments]
 
 
 @classrooms_router.post("/{classroom_id}/assignments", response_model=AssignmentSummaryResponse, status_code=status.HTTP_201_CREATED)
@@ -348,27 +411,38 @@ async def create_new_assignment(
 ):
     """Create homework assignment for classroom from an existing published Exam."""
     a = await create_assignment(db, classroom_id, data, user=current_user)
-    return AssignmentSummaryResponse(
-        id=a.id,
-        classroom_id=a.classroom_id,
-        classroom_name=a.classroom.name if a.classroom else None,
-        exam_id=a.exam_id,
-        exam_title=a.exam.title if a.exam else None,
-        title=a.title,
-        description=a.description,
-        open_date=a.open_date,
-        due_date=a.due_date,
-        max_attempts=a.max_attempts,
-        allow_late_submission=a.allow_late_submission,
-        allow_review=a.allow_review,
-        status=a.status,
-        is_published=a.is_published,
-        total_points=a.exam.total_points if a.exam else 10.0,
-        duration_minutes=a.exam.duration_minutes if a.exam else 45,
-        question_count=len(a.exam.exam_questions) if a.exam and a.exam.exam_questions else 0,
-        created_at=a.created_at,
-        updated_at=a.updated_at
+    return _serialize_assignment_summary(a, current_user)
+
+
+@classrooms_router.post("/{classroom_id}/assignments/upload", response_model=AssignmentSummaryResponse, status_code=status.HTTP_201_CREATED)
+async def create_new_file_assignment(
+    classroom_id: str,
+    title: str = Form(..., min_length=3, max_length=255),
+    due_date: datetime = Form(...),
+    file: UploadFile = File(..., description="Tệp đề bài/bài tập (.pdf, .docx, .xlsx, ảnh, .txt, .zip)"),
+    description: Optional[str] = Form(None),
+    open_date: Optional[datetime] = Form(None),
+    allow_late_submission: bool = Form(False),
+    total_points: float = Form(10.0),
+    assignment_status: AssignmentStatus = Form(AssignmentStatus.PUBLISHED, alias="status"),
+    current_user: User = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN, UserRole.SUPERADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a file-attachment assignment uploaded directly from teacher's computer."""
+    a = await create_file_assignment(
+        db=db,
+        classroom_id=classroom_id,
+        title=title,
+        due_date=due_date,
+        upload_file=file,
+        user=current_user,
+        description=description,
+        open_date=open_date,
+        allow_late_submission=allow_late_submission,
+        total_points=total_points,
+        status=assignment_status,
     )
+    return _serialize_assignment_summary(a, current_user)
 
 
 # ==============================================================================
@@ -383,27 +457,7 @@ async def get_assignment_detail_endpoint(
 ):
     """View assignment detail."""
     a = await get_assignment_by_id(db, assignment_id, user=current_user)
-    return AssignmentSummaryResponse(
-        id=a.id,
-        classroom_id=a.classroom_id,
-        classroom_name=a.classroom.name if a.classroom else None,
-        exam_id=a.exam_id,
-        exam_title=a.exam.title if a.exam else None,
-        title=a.title,
-        description=a.description,
-        open_date=a.open_date,
-        due_date=a.due_date,
-        max_attempts=a.max_attempts,
-        allow_late_submission=a.allow_late_submission,
-        allow_review=a.allow_review,
-        status=a.status,
-        is_published=a.is_published,
-        total_points=a.exam.total_points if a.exam else 10.0,
-        duration_minutes=a.exam.duration_minutes if a.exam else 45,
-        question_count=len(a.exam.exam_questions) if a.exam and a.exam.exam_questions else 0,
-        created_at=a.created_at,
-        updated_at=a.updated_at
-    )
+    return _serialize_assignment_summary(a, current_user)
 
 
 @assignments_router.patch("/{assignment_id}", response_model=AssignmentSummaryResponse)
@@ -415,27 +469,7 @@ async def update_assignment_endpoint(
 ):
     """Update assignment settings (Teacher owner / Admin)."""
     a = await update_assignment(db, assignment_id, data, user=current_user)
-    return AssignmentSummaryResponse(
-        id=a.id,
-        classroom_id=a.classroom_id,
-        classroom_name=a.classroom.name if a.classroom else None,
-        exam_id=a.exam_id,
-        exam_title=a.exam.title if a.exam else None,
-        title=a.title,
-        description=a.description,
-        open_date=a.open_date,
-        due_date=a.due_date,
-        max_attempts=a.max_attempts,
-        allow_late_submission=a.allow_late_submission,
-        allow_review=a.allow_review,
-        status=a.status,
-        is_published=a.is_published,
-        total_points=a.exam.total_points if a.exam else 10.0,
-        duration_minutes=a.exam.duration_minutes if a.exam else 45,
-        question_count=len(a.exam.exam_questions) if a.exam and a.exam.exam_questions else 0,
-        created_at=a.created_at,
-        updated_at=a.updated_at
-    )
+    return _serialize_assignment_summary(a, current_user)
 
 
 @assignments_router.post("/{assignment_id}/publish", response_model=AssignmentSummaryResponse)
@@ -446,27 +480,7 @@ async def publish_assignment_endpoint(
 ):
     """Publish assignment so students can see and start it."""
     a = await publish_assignment(db, assignment_id, user=current_user)
-    return AssignmentSummaryResponse(
-        id=a.id,
-        classroom_id=a.classroom_id,
-        classroom_name=a.classroom.name if a.classroom else None,
-        exam_id=a.exam_id,
-        exam_title=a.exam.title if a.exam else None,
-        title=a.title,
-        description=a.description,
-        open_date=a.open_date,
-        due_date=a.due_date,
-        max_attempts=a.max_attempts,
-        allow_late_submission=a.allow_late_submission,
-        allow_review=a.allow_review,
-        status=a.status,
-        is_published=a.is_published,
-        total_points=a.exam.total_points if a.exam else 10.0,
-        duration_minutes=a.exam.duration_minutes if a.exam else 45,
-        question_count=len(a.exam.exam_questions) if a.exam and a.exam.exam_questions else 0,
-        created_at=a.created_at,
-        updated_at=a.updated_at
-    )
+    return _serialize_assignment_summary(a, current_user)
 
 
 @assignments_router.post("/{assignment_id}/cancel", response_model=AssignmentSummaryResponse)
@@ -477,27 +491,18 @@ async def cancel_assignment_endpoint(
 ):
     """Cancel assignment (Teacher owner / Admin)."""
     a = await cancel_assignment(db, assignment_id, user=current_user)
-    return AssignmentSummaryResponse(
-        id=a.id,
-        classroom_id=a.classroom_id,
-        classroom_name=a.classroom.name if a.classroom else None,
-        exam_id=a.exam_id,
-        exam_title=a.exam.title if a.exam else None,
-        title=a.title,
-        description=a.description,
-        open_date=a.open_date,
-        due_date=a.due_date,
-        max_attempts=a.max_attempts,
-        allow_late_submission=a.allow_late_submission,
-        allow_review=a.allow_review,
-        status=a.status,
-        is_published=a.is_published,
-        total_points=a.exam.total_points if a.exam else 10.0,
-        duration_minutes=a.exam.duration_minutes if a.exam else 45,
-        question_count=len(a.exam.exam_questions) if a.exam and a.exam.exam_questions else 0,
-        created_at=a.created_at,
-        updated_at=a.updated_at
-    )
+    return _serialize_assignment_summary(a, current_user)
+
+
+@assignments_router.get("/{assignment_id}/attachment")
+async def download_assignment_attachment_endpoint(
+    assignment_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download the teacher-attached file for a FILE assignment (members/owner/admin only)."""
+    file_path, download_name = await get_assignment_attachment_path(db, assignment_id, user=current_user)
+    return FileResponse(path=str(file_path), filename=download_name)
 
 
 @assignments_router.get("/{assignment_id}/submissions", response_model=AssignmentSubmissionsResponse)
@@ -508,6 +513,82 @@ async def get_assignment_submissions_endpoint(
 ):
     """Retrieve full submission gradebook for an assignment (Teacher owner or Admin)."""
     return await get_assignment_submissions(db, assignment_id, user=current_user)
+
+
+@assignments_router.post("/{assignment_id}/file-submission", response_model=FileSubmissionResponse, status_code=status.HTTP_201_CREATED)
+async def submit_file_assignment_endpoint(
+    assignment_id: str,
+    file: UploadFile = File(..., description="Tệp bài làm của học sinh"),
+    note: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Student uploads a file submission for a FILE-type assignment."""
+    sub = await submit_file_assignment(
+        db=db,
+        assignment_id=assignment_id,
+        upload_file=file,
+        student=current_user,
+        student_note=note,
+    )
+    return FileSubmissionResponse(
+        id=sub.id,
+        assignment_id=sub.assignment_id,
+        student_id=sub.student_id,
+        file_name=sub.file_name,
+        file_size=sub.file_size,
+        content_type=sub.content_type,
+        download_url=f"/api/v1/assignments/{assignment_id}/file-submissions/{sub.id}/download",
+        student_note=sub.student_note,
+        status=sub.status,
+        score=sub.score,
+        teacher_feedback=sub.teacher_feedback,
+        submitted_at=sub.submitted_at,
+        graded_at=sub.graded_at,
+    )
+
+
+@assignments_router.get("/{assignment_id}/file-submissions/{submission_id}/download")
+async def download_file_submission_endpoint(
+    assignment_id: str,
+    submission_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download a student's file submission (owner student, teacher owner, or admin)."""
+    file_path, download_name = await get_file_submission_download_path(
+        db, assignment_id, submission_id, user=current_user
+    )
+    return FileResponse(path=str(file_path), filename=download_name)
+
+
+@assignments_router.post("/{assignment_id}/file-submissions/{submission_id}/grade", response_model=FileSubmissionResponse)
+async def grade_file_submission_endpoint(
+    assignment_id: str,
+    submission_id: str,
+    data: FileSubmissionGradeRequest,
+    current_user: User = Depends(require_roles(UserRole.TEACHER, UserRole.ADMIN, UserRole.SUPERADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Teacher grades and writes feedback for a student's file submission."""
+    sub = await grade_file_submission(
+        db, assignment_id, submission_id, data, user=current_user
+    )
+    return FileSubmissionResponse(
+        id=sub.id,
+        assignment_id=sub.assignment_id,
+        student_id=sub.student_id,
+        file_name=sub.file_name,
+        file_size=sub.file_size,
+        content_type=sub.content_type,
+        download_url=f"/api/v1/assignments/{assignment_id}/file-submissions/{sub.id}/download",
+        student_note=sub.student_note,
+        status=sub.status,
+        score=sub.score,
+        teacher_feedback=sub.teacher_feedback,
+        submitted_at=sub.submitted_at,
+        graded_at=sub.graded_at,
+    )
 
 
 @assignments_router.post("/{assignment_id}/start", response_model=ExamStartResponse)

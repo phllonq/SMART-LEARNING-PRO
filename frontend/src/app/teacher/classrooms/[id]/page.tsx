@@ -13,6 +13,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ExamFileConverterModal } from "@/components/teacher/exam-file-converter";
 import {
   Users,
   Copy,
@@ -27,8 +28,14 @@ import {
   Award,
   CheckCircle2,
   XCircle,
+  Upload,
+  Paperclip,
+  Download,
+  FileText,
+  Sparkles,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import { AssignmentSubmissionsResponse } from "@/types";
 
 export default function TeacherClassroomDetailPage({
   params,
@@ -43,12 +50,30 @@ export default function TeacherClassroomDetailPage({
 
   // Assignment Modal
   const [isCreateAssignOpen, setIsCreateAssignOpen] = useState(false);
+  const [isQuizConvertOpen, setIsQuizConvertOpen] = useState(false);
+  const [assignMode, setAssignMode] = useState<"EXAM" | "FILE">("EXAM");
   const [assignTitle, setAssignTitle] = useState("");
   const [assignExamId, setAssignExamId] = useState("");
+  const [assignFile, setAssignFile] = useState<File | null>(null);
+  const [assignTotalPoints, setAssignTotalPoints] = useState<number>(10);
+  const [assignAllowLate, setAssignAllowLate] = useState(false);
   const [assignDueDate, setAssignDueDate] = useState("");
   const [assignDescription, setAssignDescription] = useState("");
   const [isCreatingAssign, setIsCreatingAssign] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
+
+  // Submissions & Grading Modal
+  const [submissionsModalOpen, setSubmissionsModalOpen] = useState(false);
+  const [selectedAssignId, setSelectedAssignId] = useState<string | null>(null);
+  const [submissionsData, setSubmissionsData] =
+    useState<AssignmentSubmissionsResponse | null>(null);
+  const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false);
+  const [gradeDrafts, setGradeDrafts] = useState<
+    Record<string, { score: string; feedback: string }>
+  >({});
+  const [gradingSubmissionId, setGradingSubmissionId] = useState<string | null>(
+    null
+  );
 
   // Fetch Classroom Detail
   const {
@@ -129,27 +154,45 @@ export default function TeacherClassroomDetailPage({
   const handleCreateAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
     setAssignError(null);
-    if (!assignExamId) {
+    if (!assignDueDate) {
+      setAssignError("Vui lòng chọn hạn chót nộp bài.");
+      return;
+    }
+    if (assignMode === "EXAM" && !assignExamId) {
       setAssignError("Vui lòng chọn một đề thi từ danh sách.");
       return;
     }
-    if (!assignDueDate) {
-      setAssignError("Vui lòng chọn hạn chót nộp bài.");
+    if (assignMode === "FILE" && !assignFile) {
+      setAssignError("Vui lòng chọn tệp bài tập từ máy tính.");
       return;
     }
 
     setIsCreatingAssign(true);
     try {
-      await assignmentsApi.createAssignment(classroomId, {
-        exam_id: assignExamId,
-        title: assignTitle,
-        description: assignDescription,
-        due_date: new Date(assignDueDate).toISOString(),
-        status: "PUBLISHED",
-      });
+      if (assignMode === "EXAM") {
+        await assignmentsApi.createAssignment(classroomId, {
+          exam_id: assignExamId,
+          title: assignTitle,
+          description: assignDescription,
+          due_date: new Date(assignDueDate).toISOString(),
+          allow_late_submission: assignAllowLate,
+          status: "PUBLISHED",
+        });
+      } else if (assignFile) {
+        await assignmentsApi.createFileAssignment(classroomId, {
+          file: assignFile,
+          title: assignTitle,
+          description: assignDescription || undefined,
+          due_date: new Date(assignDueDate).toISOString(),
+          allow_late_submission: assignAllowLate,
+          total_points: assignTotalPoints,
+          status: "PUBLISHED",
+        });
+      }
       setIsCreateAssignOpen(false);
       setAssignTitle("");
       setAssignExamId("");
+      setAssignFile(null);
       setAssignDescription("");
       setAssignDueDate("");
       refetchAssignments();
@@ -162,6 +205,59 @@ export default function TeacherClassroomDetailPage({
       }
     } finally {
       setIsCreatingAssign(false);
+    }
+  };
+
+  const handleOpenSubmissions = async (assignmentId: string) => {
+    setSelectedAssignId(assignmentId);
+    setSubmissionsModalOpen(true);
+    setIsLoadingSubmissions(true);
+    try {
+      const data = await assignmentsApi.getAssignmentSubmissions(assignmentId);
+      setSubmissionsData(data);
+      const initialDrafts: Record<string, { score: string; feedback: string }> = {};
+      data.items.forEach((item) => {
+        if (item.file_submission) {
+          initialDrafts[item.file_submission.id] = {
+            score:
+              item.file_submission.score !== null &&
+              item.file_submission.score !== undefined
+                ? String(item.file_submission.score)
+                : "",
+            feedback: item.file_submission.teacher_feedback || "",
+          };
+        }
+      });
+      setGradeDrafts(initialDrafts);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Không thể tải danh sách bài nộp.");
+      setSubmissionsModalOpen(false);
+    } finally {
+      setIsLoadingSubmissions(false);
+    }
+  };
+
+  const handleGradeFileSubmission = async (submissionId: string) => {
+    if (!selectedAssignId) return;
+    const draft = gradeDrafts[submissionId];
+    const parsedScore = Number(draft?.score);
+    if (!draft || draft.score.trim() === "" || Number.isNaN(parsedScore)) {
+      alert("Vui lòng nhập điểm hợp lệ.");
+      return;
+    }
+
+    setGradingSubmissionId(submissionId);
+    try {
+      await assignmentsApi.gradeFileSubmission(selectedAssignId, submissionId, {
+        score: parsedScore,
+        teacher_feedback: draft.feedback || undefined,
+      });
+      const updated = await assignmentsApi.getAssignmentSubmissions(selectedAssignId);
+      setSubmissionsData(updated);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "Lưu điểm thất bại.");
+    } finally {
+      setGradingSubmissionId(null);
     }
   };
 
@@ -360,7 +456,15 @@ export default function TeacherClassroomDetailPage({
       {/* Tab 2: Assignments */}
       {activeTab === "assignments" && (
         <div className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsQuizConvertOpen(true)}
+              className="gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+            >
+              <Sparkles className="h-4 w-4" />
+              <span>Up đề -&gt; Chuyển thành Trắc nghiệm</span>
+            </Button>
             <Button
               onClick={() => setIsCreateAssignOpen(true)}
               className="gap-2 bg-emerald-600 hover:bg-emerald-700"
@@ -391,7 +495,7 @@ export default function TeacherClassroomDetailPage({
                   className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-emerald-300 transition-all shadow-xs"
                 >
                   <div className="space-y-1.5 flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Badge
                         variant={
                           a.status === "PUBLISHED"
@@ -407,9 +511,16 @@ export default function TeacherClassroomDetailPage({
                           ? "Đã hủy"
                           : "Bản nháp"}
                       </Badge>
-                      <span className="text-xs text-slate-500">
-                        Đề thi: {a.exam_title || a.exam_id}
-                      </span>
+                      {a.assignment_type === "FILE" ? (
+                        <Badge variant="outline" className="gap-1 bg-indigo-50 text-indigo-700 border-indigo-200">
+                          <Paperclip className="h-3 w-3" />
+                          <span>File: {a.attachment_name || "Đính kèm"}</span>
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-slate-500">
+                          Đề thi: {a.exam_title || a.exam_id}
+                        </span>
+                      )}
                     </div>
 
                     <h4 className="text-base font-bold text-slate-900">
@@ -427,10 +538,12 @@ export default function TeacherClassroomDetailPage({
                         <Calendar className="h-3.5 w-3.5 text-slate-400" />
                         Hạn chót: {formatDate(a.due_date)}
                       </span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5 text-slate-400" />
-                        Thời gian: {a.duration_minutes} phút
-                      </span>
+                      {a.assignment_type !== "FILE" && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3.5 w-3.5 text-slate-400" />
+                          Thời gian: {a.duration_minutes} phút
+                        </span>
+                      )}
                       <span className="flex items-center gap-1">
                         <Award className="h-3.5 w-3.5 text-slate-400" />
                         Thang điểm: {a.total_points} đ
@@ -438,7 +551,24 @@ export default function TeacherClassroomDetailPage({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+                  <div className="flex flex-wrap items-center gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+                    {a.assignment_type === "FILE" && a.has_attachment && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          assignmentsApi.downloadAssignmentAttachment(
+                            a.id,
+                            a.attachment_name || "bai-tap"
+                          )
+                        }
+                        className="text-xs gap-1"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        <span>Tải đề</span>
+                      </Button>
+                    )}
+
                     {a.status === "DRAFT" && (
                       <Button
                         size="sm"
@@ -465,14 +595,14 @@ export default function TeacherClassroomDetailPage({
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() =>
-                        alert(
-                          `Đang tải sổ điểm thời gian thực của bài tập "${a.title}"...`
-                        )
-                      }
+                      onClick={() => handleOpenSubmissions(a.id)}
                       className="text-xs"
                     >
-                      <span>Xem sổ điểm</span>
+                      <span>
+                        {a.assignment_type === "FILE"
+                          ? "Xem & Chấm bài nộp"
+                          : "Xem sổ điểm"}
+                      </span>
                     </Button>
                   </div>
                 </Card>
@@ -487,7 +617,8 @@ export default function TeacherClassroomDetailPage({
         isOpen={isCreateAssignOpen}
         onClose={() => setIsCreateAssignOpen(false)}
         title="Giao Bài tập về nhà mới"
-        description="Chọn đề thi từ Ngân hàng đề và thiết lập thời hạn nộp bài"
+        description="Chọn đề thi trực tuyến hoặc tải tệp bài tập từ máy tính để giao cho học sinh"
+        maxWidth="lg"
       >
         <form onSubmit={handleCreateAssignment} className="space-y-4">
           {assignError && (
@@ -495,6 +626,40 @@ export default function TeacherClassroomDetailPage({
               {assignError}
             </div>
           )}
+
+          {/* Mode Toggle */}
+          <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-slate-100">
+            <button
+              type="button"
+              onClick={() => {
+                setAssignMode("EXAM");
+                setAssignError(null);
+              }}
+              className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                assignMode === "EXAM"
+                  ? "bg-white text-emerald-700 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              <span>Chọn Đề thi trực tuyến</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAssignMode("FILE");
+                setAssignError(null);
+              }}
+              className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold transition-all ${
+                assignMode === "FILE"
+                  ? "bg-white text-emerald-700 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              <span>Up file bài tập từ máy</span>
+            </button>
+          </div>
 
           <Input
             label="Tiêu đề bài tập"
@@ -504,24 +669,57 @@ export default function TeacherClassroomDetailPage({
             required
           />
 
-          <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-slate-700">
-              Chọn đề thi mẫu
-            </label>
-            <select
-              value={assignExamId}
-              onChange={(e) => setAssignExamId(e.target.value)}
-              required
-              className="flex h-10 w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-            >
-              <option value="">-- Chọn đề thi --</option>
-              {availableExams.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.title} ({e.duration_minutes} phút, {e.question_count || 10} câu)
-                </option>
-              ))}
-            </select>
-          </div>
+          {assignMode === "EXAM" ? (
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-slate-700">
+                Chọn đề thi mẫu
+              </label>
+              <select
+                value={assignExamId}
+                onChange={(e) => setAssignExamId(e.target.value)}
+                required
+                className="flex h-10 w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              >
+                <option value="">-- Chọn đề thi --</option>
+                {availableExams.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.title} ({e.duration_minutes} phút, {e.question_count || 10} câu)
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="space-y-3 rounded-xl border border-dashed border-emerald-300 bg-emerald-50/40 p-3.5">
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-slate-700">
+                  Tệp bài tập đính kèm (.pdf, .docx, .xlsx, ảnh, .txt, .zip — tối đa 15MB)
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,.webp,.txt,.zip"
+                  onChange={(e) => {
+                    const picked = e.target.files?.[0] || null;
+                    setAssignFile(picked);
+                    if (picked && !assignTitle) {
+                      setAssignTitle(picked.name.replace(/\.[^/.]+$/, ""));
+                    }
+                  }}
+                  required
+                  className="block w-full text-xs text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-emerald-600 file:text-white hover:file:bg-emerald-700"
+                />
+              </div>
+              <Input
+                label="Thang điểm tối đa"
+                type="number"
+                step="0.5"
+                min={1}
+                max={100}
+                value={assignTotalPoints}
+                onChange={(e) => setAssignTotalPoints(Number(e.target.value))}
+                required
+              />
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <label className="block text-sm font-medium text-slate-700">
@@ -543,6 +741,16 @@ export default function TeacherClassroomDetailPage({
             onChange={(e) => setAssignDescription(e.target.value)}
           />
 
+          <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={assignAllowLate}
+              onChange={(e) => setAssignAllowLate(e.target.checked)}
+              className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+            />
+            <span>Cho phép học sinh nộp muộn sau hạn chót</span>
+          </label>
+
           <div className="flex justify-end gap-2 pt-2">
             <Button
               type="button"
@@ -561,6 +769,181 @@ export default function TeacherClassroomDetailPage({
           </div>
         </form>
       </Dialog>
+
+      {/* Submissions & Grading Modal */}
+      <Dialog
+        isOpen={submissionsModalOpen}
+        onClose={() => setSubmissionsModalOpen(false)}
+        title={
+          submissionsData
+            ? `Bài nộp: ${submissionsData.assignment_title}`
+            : "Sổ điểm & Bài nộp học sinh"
+        }
+        description={
+          submissionsData
+            ? `Đã nộp: ${submissionsData.submitted_count}/${submissionsData.total_students} học sinh • Điểm trung bình: ${submissionsData.average_score}`
+            : undefined
+        }
+        maxWidth="xl"
+      >
+        {isLoadingSubmissions ? (
+          <div className="space-y-3 py-4">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : !submissionsData || submissionsData.items.length === 0 ? (
+          <p className="py-8 text-center text-sm text-slate-500">
+            Lớp chưa có học sinh nào để hiển thị bài nộp.
+          </p>
+        ) : (
+          <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+            {submissionsData.items.map((item) => {
+              const fs = item.file_submission;
+              const draft = fs ? gradeDrafts[fs.id] : undefined;
+
+              return (
+                <div
+                  key={item.student_id}
+                  className="rounded-xl border border-slate-200 p-3.5 space-y-2.5 bg-slate-50/40"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {item.student_name}
+                      </p>
+                      <p className="text-xs text-slate-500">{item.student_email}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={
+                          item.status === "GRADED"
+                            ? "success"
+                            : item.status === "SUBMITTED"
+                            ? "purple"
+                            : item.status === "IN_PROGRESS"
+                            ? "warning"
+                            : "secondary"
+                        }
+                      >
+                        {item.status === "GRADED"
+                          ? `Đã chấm: ${item.score ?? 0}/${item.maximum_score} đ`
+                          : item.status === "SUBMITTED"
+                          ? "Đã nộp bài"
+                          : item.status === "IN_PROGRESS"
+                          ? "Đang làm"
+                          : "Chưa nộp"}
+                      </Badge>
+                      {submissionsData.assignment_type !== "FILE" &&
+                        item.score !== null &&
+                        item.score !== undefined && (
+                          <span className="text-xs font-bold text-emerald-700">
+                            {item.score}/{item.maximum_score} đ
+                          </span>
+                        )}
+                    </div>
+                  </div>
+
+                  {fs && (
+                    <div className="rounded-lg bg-white border border-slate-200 p-3 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-1.5 text-slate-700 font-medium">
+                          <Paperclip className="h-3.5 w-3.5 text-indigo-600" />
+                          <span>{fs.file_name}</span>
+                          <span className="text-slate-400">
+                            ({Math.max(1, Math.round(fs.file_size / 1024))} KB)
+                          </span>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            assignmentsApi.downloadFileSubmission(
+                              submissionsData.assignment_id,
+                              fs.id,
+                              fs.file_name
+                            )
+                          }
+                          className="h-7 text-xs gap-1"
+                        >
+                          <Download className="h-3 w-3" />
+                          <span>Tải bài làm</span>
+                        </Button>
+                      </div>
+
+                      {fs.student_note && (
+                        <p className="text-xs text-slate-600 italic">
+                          Ghi chú của HS: &ldquo;{fs.student_note}&rdquo;
+                        </p>
+                      )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 pt-1">
+                        <div className="sm:col-span-3">
+                          <input
+                            type="number"
+                            step="0.25"
+                            min={0}
+                            max={item.maximum_score}
+                            placeholder={`Điểm / ${item.maximum_score}`}
+                            value={draft?.score ?? ""}
+                            onChange={(e) =>
+                              setGradeDrafts((prev) => ({
+                                ...prev,
+                                [fs.id]: {
+                                  score: e.target.value,
+                                  feedback: prev[fs.id]?.feedback ?? "",
+                                },
+                              }))
+                            }
+                            className="w-full h-8 rounded-lg border border-slate-300 px-2.5 text-xs focus:border-emerald-500 focus:outline-none"
+                          />
+                        </div>
+                        <div className="sm:col-span-7">
+                          <input
+                            type="text"
+                            placeholder="Nhận xét của giáo viên..."
+                            value={draft?.feedback ?? ""}
+                            onChange={(e) =>
+                              setGradeDrafts((prev) => ({
+                                ...prev,
+                                [fs.id]: {
+                                  score: prev[fs.id]?.score ?? "",
+                                  feedback: e.target.value,
+                                },
+                              }))
+                            }
+                            className="w-full h-8 rounded-lg border border-slate-300 px-2.5 text-xs focus:border-emerald-500 focus:outline-none"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handleGradeFileSubmission(fs.id)}
+                            isLoading={gradingSubmissionId === fs.id}
+                            className="w-full h-8 text-xs bg-emerald-600 hover:bg-emerald-700"
+                          >
+                            Lưu điểm
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Dialog>
+      {/* Auto-Convert Uploaded Exam File -> Multiple-Choice Quiz Assignment */}
+      <ExamFileConverterModal
+        isOpen={isQuizConvertOpen}
+        onClose={() => setIsQuizConvertOpen(false)}
+        classroomId={classroomId}
+        defaultGradeId={classroom.grade_id || 10}
+        onSuccess={() => {
+          refetchAssignments();
+          refetchClassroom();
+        }}
+      />
     </div>
   );
 }

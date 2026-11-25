@@ -2,6 +2,7 @@ from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from datetime import datetime, timezone
 from app.modules.exams.models import ExamStatus, AttemptStatus
+from app.modules.questions.schemas import ImportedQuestionError, QuestionCreate
 
 
 # --- Question in Exam Schemas ---
@@ -160,3 +161,64 @@ class SubmissionSummaryResponse(BaseModel):
     time_spent_seconds: int = 0
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ExamImportResponse(BaseModel):
+    exam: ExamSummaryResponse
+    imported_questions_count: int
+    failed_count: int
+    errors: List[ImportedQuestionError] = []
+
+
+class DraftQuizOption(BaseModel):
+    option_key: str
+    content: str
+    is_correct: bool = False
+    order_index: int = 0
+
+
+class DraftQuizQuestion(BaseModel):
+    content: str
+    question_type: str = "SINGLE_CHOICE"
+    difficulty_level: str = "COMPREHENSION"
+    options: List[DraftQuizOption] = []
+    explanation: Optional[str] = None
+    hint: Optional[str] = None
+    tags: Optional[str] = None
+    has_correct_answer: bool = False
+    warning: Optional[str] = None
+
+
+class ExamConvertPreviewResponse(BaseModel):
+    suggested_title: str
+    total_detected: int
+    ready_count: int
+    needs_answer_count: int
+    extraction_method: str
+    ai_used: bool = False
+    ai_available: bool = False
+    draft_questions: List[DraftQuizQuestion] = []
+    errors: List[ImportedQuestionError] = []
+
+
+class ExamConvertConfirmRequest(BaseModel):
+    title: str = Field(..., min_length=3, max_length=255)
+    description: Optional[str] = None
+    subject_id: Optional[str] = None
+    grade_id: Optional[int] = Field(None, ge=1, le=12)
+    duration_minutes: int = Field(45, ge=5, le=300)
+    total_points: float = Field(10.0, ge=1.0, le=100.0)
+    passing_points: float = Field(5.0, ge=0.0, le=100.0)
+    publish_now: bool = True
+    questions: List[QuestionCreate] = Field(..., min_length=1)
+    classroom_id: Optional[str] = None
+    assignment_title: Optional[str] = None
+    due_date: Optional[datetime] = None
+    allow_late_submission: bool = False
+
+
+class ExamConvertConfirmResponse(BaseModel):
+    exam: ExamSummaryResponse
+    imported_questions_count: int
+    assignment_id: Optional[str] = None
+    classroom_id: Optional[str] = None
