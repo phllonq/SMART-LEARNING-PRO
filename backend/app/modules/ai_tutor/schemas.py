@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 class MessageStatus(str, Enum):
     """Lifecycle status of a tutor message during generation and storage."""
+    PENDING = "PENDING"
     STREAMING = "STREAMING"
     COMPLETED = "COMPLETED"
     INTERRUPTED = "INTERRUPTED"
